@@ -11,12 +11,11 @@ if project_root not in sys.path:
 import logging
 import torch
 import torch.nn as nn
-from torchlibrosa.stft import LogmelFilterBank
+from torchlibrosa.stft import Spectrogram, LogmelFilterBank
 from torchlibrosa.augmentation import SpecAugmentation
 
 # Import centralized configuration from config package
 from config import AudioFeaturesConfig as AudioFrontendConfig
-from features.tkeo_spectrogram import TKEOAdaptiveSpectrogram
 
 # Ensure stdout/stderr UTF-8 encoding on Windows terminal
 if hasattr(sys.stdout, 'reconfigure'):
@@ -61,16 +60,15 @@ class AudioFrontend(nn.Module):
 
         self.mel_bins = self.config.mel_bins
 
-        # 1. Amplitude Spectrogram Extractor with TKEO adaptive pre-emphasis
-        self.spectrogram_extractor = TKEOAdaptiveSpectrogram(
+        # 1. Amplitude Spectrogram Extractor (STFT) on GPU using torchlibrosa
+        self.spectrogram_extractor = Spectrogram(
             n_fft=self.config.window_size,
             hop_length=self.config.hop_size,
             win_length=self.config.window_size,
             window='hann',
             center=True,
             pad_mode='reflect',
-            alpha_max=0.99,
-            beta=0.8,
+            freeze_parameters=True
         )
 
         # 2. Logmel Filterbank Extractor on GPU using torchlibrosa
@@ -105,8 +103,6 @@ class AudioFrontend(nn.Module):
         logger.info(f"  - Window Size:              {self.config.window_size}")
         logger.info(f"  - Hop Size:                 {self.config.hop_size}")
         logger.info(f"  - Mel Bins:                 {self.config.mel_bins}")
-        logger.info("  - STFT Method:              TKEO adaptive pre-emphasis")
-        logger.info("  - TKEO alpha_max / beta:    0.99 / 0.8")
         logger.info(f"  - Fmin/Fmax:                {self.config.fmin} / {fmax} Hz")
         logger.info(f"  - SpecAugment Time Masking: Width={self.config.time_drop_width}, Stripes={self.config.time_stripes_num}")
         logger.info(f"  - SpecAugment Freq Masking: Width={self.config.freq_drop_width}, Stripes={self.config.freq_stripes_num}")
