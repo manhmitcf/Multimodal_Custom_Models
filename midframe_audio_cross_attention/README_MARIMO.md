@@ -124,8 +124,8 @@ Dataset media trong CSV phải mount ở `/marimo/Fish_Feeding_Intensity_Dataset
 
 ```bash
 test -d /marimo/Fish_Feeding_Intensity_Dataset && echo "dataset OK"
-test -f ../checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/audio_best.pt && echo "audio checkpoint OK"
-test -f ../checkpoints/SwinTiny_holdout_random_sample_20260729_153012/DL_video/checkpoint/swin_tiny/video_best.pt && echo "video checkpoint OK"
+test -f /marimo/Multimodal_Custom_Models/checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/audio_best.pt && echo "audio checkpoint OK"
+test -f /marimo/Multimodal_Custom_Models/checkpoints/SwinTiny_holdout_random_sample_20260729_153012/DL_video/checkpoint/swin_tiny/video_best.pt && echo "video checkpoint OK"
 ```
 
 ## 5. Cài môi trường
@@ -146,14 +146,14 @@ Các nhóm quan trọng:
 | Nhóm | Sửa gì |
 |---|---|
 | `references` | đường dẫn hai repo baseline; không đổi nếu giữ cấu trúc project mặc định |
-| `checkpoints` | một audio checkpoint và một video checkpoint được chọn |
+| `checkpoints` | audio checkpoint và bảng path cố định của bốn video checkpoint |
 | `data` | split CSV bất biến lấy thẳng từ checkpoint, cache audio/video, số worker, ảnh 224 |
 | `model` | video backbone, `frozen`/`tune`, kích thước fusion |
 | `training` | batch size, epoch, LR, seed, device, thư mục kết quả |
 
-`checkpoints.video` phải khớp `model.video_backbone`:
+Chỉ đổi `model.video_backbone` để chọn một trong bốn encoder video. Code tự lấy path tương ứng từ `checkpoints.video_by_backbone`, nên không thể lẫn kiến trúc MobileNetV2 và checkpoint SwinTiny. Giữ đủ bốn path trong bảng này:
 
-| `model.video_backbone` | `checkpoints.video` |
+| `model.video_backbone` | `checkpoints.video_by_backbone` được dùng tự động |
 |---|---|
 | `densenet121` | `../../checkpoints/DenseNet121_holdout_random_sample_20260729_153012/DL_video/checkpoint/densenet121/video_best.pt` |
 | `efficientnet_b0` | `../../checkpoints/EfficientNetB0_holdout_random_sample_20260804_181745/U_FFIA_video/checkpoint/efficientnet_b0/video_best.pt` |
@@ -169,6 +169,8 @@ checkpoints/.../panns_cnn6/splits/test.csv
 ```
 
 Không đặt `data.split_dir` trỏ về dataset gốc và không chạy `FishDataSplitter`: multimodal không tạo lại, không xáo trộn và không ghi đè split. Các split checkpoint hiện có gồm 21,467 train, 2,800 validation, 2,800 test.
+
+`data.num_workers: -1` dùng đúng quy tắc auto của baseline: CPU không xác định/≤0 dùng `0`; đúng 2 CPU dùng `1`; các trường hợp khác dùng `CPU // 2 + 1`. Giá trị `0` hoặc số dương sẽ được giữ nguyên.
 
 Chế độ encoder:
 
