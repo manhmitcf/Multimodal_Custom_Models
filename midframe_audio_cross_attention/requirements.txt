@@ -2,6 +2,7 @@ torch
 torchvision
 torchlibrosa
 torchaudio
+torchcodec
 soundfile
 opencv-python
 numpy

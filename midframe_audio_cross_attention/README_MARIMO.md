@@ -135,6 +135,8 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
+`torchcodec` là dependency của `torchaudio.load()` trong baseline audio và đã có trong `requirements.txt`. Nếu đã cài requirements trước khi pull bản mới, chạy thêm `python -m pip install torchcodec` rồi mới chạy `main.py`.
+
 Sau khi cài xong, cấu hình run trong JSON rồi chạy `python main.py`.
 
 ## 6. Chỉ sửa một file config
