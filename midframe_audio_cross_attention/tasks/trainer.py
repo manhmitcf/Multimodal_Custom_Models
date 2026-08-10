@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -11,6 +12,10 @@ import torch
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -21,13 +26,13 @@ class EvaluationResult:
     confusion_matrix: list[list[int]]
 
 
-def evaluate(model: nn.Module, loader: DataLoader, device: torch.device) -> EvaluationResult:
+def evaluate(model: nn.Module, loader: DataLoader, device: torch.device, progress_desc: str = "Running model evaluation...") -> EvaluationResult:
     was_training = model.training
     model.eval()
     prediction_batches: list[torch.Tensor] = []
     target_batches: list[torch.Tensor] = []
     with torch.inference_mode():
-        for batch in loader:
+        for batch in tqdm(loader, desc=progress_desc):
             logits = model(batch["waveform"].to(device), batch["image"].to(device))
             prediction_batches.append(logits.argmax(dim=1).cpu())
             target_batches.append(batch["label"].cpu())
@@ -69,11 +74,13 @@ class MultimodalTrainer:
     def fit_then_test(self, epochs: int) -> EvaluationResult:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         best_score = float("-inf")
+        logger.info("Starting multimodal training pipeline (monitor metric: validation macro-F1)...")
         for epoch in range(1, epochs + 1):
             self.model.train()
             total_loss = 0.0
             total_samples = 0
-            for batch in self.train_loader:
+            pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}/{epochs}")
+            for batch in pbar:
                 self.optimizer.zero_grad(set_to_none=True)
                 labels = batch["label"].to(self.device)
                 logits = self.model(batch["waveform"].to(self.device), batch["image"].to(self.device))
@@ -82,15 +89,33 @@ class MultimodalTrainer:
                 self.optimizer.step()
                 total_loss += loss.item() * labels.size(0)
                 total_samples += labels.size(0)
-            validation = evaluate(self.model, self.val_loader, self.device)
-            print(json.dumps({"epoch": epoch, "train_loss": total_loss / total_samples, "val": asdict(validation)}, ensure_ascii=False))
+                pbar.set_postfix({"Loss": f"{loss.item():.4f}", "Mean Loss": f"{total_loss / total_samples:.4f}"})
+            train_loss = total_loss / total_samples
+            validation = evaluate(self.model, self.val_loader, self.device, progress_desc=f"Validation Epoch {epoch}/{epochs}")
+            logger.info(
+                "Epoch %d/%d: Train Loss = %.5f | Val Accuracy = %.4f | Val Macro-F1 = %.4f | Val Per-class F1 = %s",
+                epoch,
+                epochs,
+                train_loss,
+                validation.accuracy,
+                validation.macro_f1,
+                [round(value, 4) for value in validation.per_class_f1],
+            )
             if validation.macro_f1 > best_score:
                 best_score = validation.macro_f1
                 torch.save({"epoch": epoch, "model_state_dict": self.model.state_dict(), "val_macro_f1": best_score}, self.output_dir / "best.pt")
                 self._save_result("best_val", validation)
+                logger.info("Saved best fusion checkpoint: '%s' (validation macro-F1 = %.4f)", self.output_dir / "best.pt", best_score)
         checkpoint = torch.load(self.output_dir / "best.pt", map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint["model_state_dict"], strict=True)
-        test = evaluate(self.model, self.test_loader, self.device)
+        logger.info("Training complete. Starting final holdout-test evaluation using best validation checkpoint...")
+        test = evaluate(self.model, self.test_loader, self.device, progress_desc="Final holdout test")
         self._save_result("test", test)
-        print(json.dumps({"test": asdict(test)}, ensure_ascii=False, indent=2))
+        logger.info(
+            "Holdout Test: Accuracy = %.4f | Macro-F1 = %.4f | Per-class F1 = %s | Confusion Matrix = %s",
+            test.accuracy,
+            test.macro_f1,
+            [round(value, 4) for value in test.per_class_f1],
+            test.confusion_matrix,
+        )
         return test

@@ -211,7 +211,7 @@ Không dùng test để chọn backbone, frozen/tune, epoch hoặc hyperparamete
 
 ## 8. Log khi chạy
 
-Terminal hiển thị log từ source baseline khi khởi tạo audio/video pipeline và một dòng JSON sau mỗi epoch, gồm `epoch`, `train_loss` và toàn bộ metric validation. Khi macro-F1 validation tốt hơn, `best.pt` cùng metric validation được ghi lại. Cuối run, terminal in toàn bộ metric test.
+Terminal hiển thị log từ source baseline khi khởi tạo audio/video pipeline. Trong train, progress bar `Epoch x/y` cập nhật ở mỗi batch cùng `Loss` và `Mean Loss`; validation và holdout test cũng có progress bar như baseline. Cuối mỗi epoch, log in train loss, validation accuracy, macro-F1 và F1 từng lớp. Khi macro-F1 validation tốt hơn, `best.pt` cùng metric validation được ghi lại. Cuối run, terminal in toàn bộ metric test.
 
 Khi báo cáo hoặc kiểm tra lỗi, cần theo dõi tối thiểu:
 
