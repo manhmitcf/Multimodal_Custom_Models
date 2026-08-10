@@ -25,6 +25,11 @@ def resolve_device(value: str) -> torch.device:
     return torch.device(value)
 
 
+def paired_loader_workers() -> int:
+    """Keep RAM-cached paired samples in one process to avoid cache duplication."""
+    return 0
+
+
 def main() -> None:
     config = RunConfig.from_json(CONFIG_PATH)
     random.seed(config.training.seed)
@@ -45,7 +50,7 @@ def main() -> None:
             SourcePairedDataset(config, split),
             batch_size=config.training.batch_size,
             shuffle=split == "train",
-            num_workers=config.data.num_workers,
+            num_workers=paired_loader_workers(),
             pin_memory=torch.cuda.is_available(),
             collate_fn=paired_collate,
         )

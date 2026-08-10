@@ -170,7 +170,7 @@ checkpoints/.../panns_cnn6/splits/test.csv
 
 Không đặt `data.split_dir` trỏ về dataset gốc và không chạy `FishDataSplitter`: multimodal không tạo lại, không xáo trộn và không ghi đè split. Các split checkpoint hiện có gồm 21,467 train, 2,800 validation, 2,800 test.
 
-`data.num_workers: -1` dùng đúng quy tắc auto của baseline: CPU không xác định/≤0 dùng `0`; đúng 2 CPU dùng `1`; các trường hợp khác dùng `CPU // 2 + 1`. Giá trị `0` hoặc số dương sẽ được giữ nguyên.
+`data.num_workers: -1` dùng đúng quy tắc auto của baseline: CPU không xác định/≤0 dùng `0`; đúng 2 CPU dùng `1`; các trường hợp khác dùng `CPU // 2 + 1`. Giá trị này chỉ dùng cho preload/cache audio và video của baseline. Paired `DataLoader` multimodal luôn dùng `0` worker để tránh tạo process phụ có thể nhân bản cache RAM; điều này không đổi split hay preprocessing.
 
 Chế độ encoder:
 
