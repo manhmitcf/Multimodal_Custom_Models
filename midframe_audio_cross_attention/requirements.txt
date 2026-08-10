@@ -1,0 +1,12 @@
+torch
+torchvision
+torchlibrosa
+torchaudio
+soundfile
+opencv-python
+numpy
+scikit-learn
+pydantic
+pillow
+tqdm
+decord

@@ -22,7 +22,35 @@ git switch exp/midframe-to-audio-cross-attn
 git pull --ff-only origin exp/midframe-to-audio-cross-attn
 ```
 
-## 2. Vị trí project trên Marimo
+## 2. Tải và chuẩn hóa dataset trên Marimo
+
+Chạy các lệnh sau trong Terminal Marimo để tải raw dataset qua Git LFS. Chờ clone hoàn tất trước khi thực hiện bước di chuyển/xóa folder lồng nhau.
+
+```bash
+sudo apt update && sudo apt install git-lfs -y
+git lfs install
+git config --global lfs.concurrenttransfers 64
+nohup git clone https://huggingface.co/datasets/manhmitcf/Fish_Feeding_Intensity_Dataset > clone.log 2>&1 &
+tail -n +1 -f clone.log
+```
+
+Dataset phải nằm tại `/marimo/Fish_Feeding_Intensity_Dataset`. Sau khi `clone.log` báo hoàn tất, chuẩn hóa layout nếu Hugging Face clone tạo thêm một tầng `audio/audio` và `video/video`:
+
+```bash
+mv /marimo/Fish_Feeding_Intensity_Dataset/audio/audio/* /marimo/Fish_Feeding_Intensity_Dataset/audio/
+mv /marimo/Fish_Feeding_Intensity_Dataset/video/video/* /marimo/Fish_Feeding_Intensity_Dataset/video/
+rm -rf /marimo/Fish_Feeding_Intensity_Dataset/audio/audio
+rm -rf /marimo/Fish_Feeding_Intensity_Dataset/video/video
+```
+
+Kiểm tra số file media sau khi chuẩn hóa:
+
+```bash
+find /marimo/Fish_Feeding_Intensity_Dataset -type f -iname "*.mp4" | wc -l
+find /marimo/Fish_Feeding_Intensity_Dataset -type f -iname "*.wav" | wc -l
+```
+
+## 3. Vị trí project trên Marimo
 
 Chạy từ folder này:
 
@@ -53,18 +81,16 @@ test -f ../checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio
 test -f ../checkpoints/SwinTiny_holdout_random_sample_20260729_153012/DL_video/checkpoint/swin_tiny/video_best.pt && echo "video checkpoint OK"
 ```
 
-## 3. Cài môi trường
+## 4. Cài môi trường
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
 Sau khi cài xong, cấu hình run trong JSON rồi chạy `python main.py`.
 
-## 4. Chỉ sửa một file config
+## 5. Chỉ sửa một file config
 
 Mọi tham số nằm trong [config/train_config.json](config/train_config.json). Không cần sửa Python để đổi thí nghiệm.
 
@@ -106,12 +132,19 @@ Giữ `data.cache_audio: true` và `data.video_cache_mode: "ram"` nếu muốn c
 
 Nếu CUDA out-of-memory, giảm `training.batch_size` (ví dụ `16 → 8 → 4`).
 
-## 5. Chạy một run
+## 6. Chạy một run
 
 `main.py` là entry point duy nhất:
 
 ```bash
 python main.py
+```
+
+Để chạy nền trên Marimo và theo dõi log liên tục:
+
+```bash
+nohup python3 main.py > main.log 2>&1 &
+tail -n +1 -f main.log
 ```
 
 Nó luôn thực hiện đúng trình tự baseline:
@@ -125,7 +158,7 @@ test.csv  → đánh giá holdout cuối cùng một lần
 
 Không dùng test để chọn backbone, frozen/tune, epoch hoặc hyperparameter. Những lựa chọn này phải dựa trên `best_val_metrics.json` của các run trước.
 
-## 6. Log khi chạy
+## 7. Log khi chạy
 
 Terminal hiển thị log từ source baseline khi khởi tạo audio/video pipeline và một dòng JSON sau mỗi epoch, gồm `epoch`, `train_loss` và toàn bộ metric validation. Khi macro-F1 validation tốt hơn, `best.pt` cùng metric validation được ghi lại. Cuối run, terminal in toàn bộ metric test.
 
@@ -137,7 +170,7 @@ Khi báo cáo hoặc kiểm tra lỗi, cần theo dõi tối thiểu:
 - train loss, validation macro-F1, epoch tốt nhất;
 - test accuracy, macro-F1, per-class F1 và confusion matrix.
 
-## 7. Kết quả
+## 8. Kết quả
 
 `training.output_dir` xác định vị trí output. Config mặc định tạo:
 
@@ -159,7 +192,7 @@ python -m json.tool runs/swin_tiny_frozen_cross_attn/test_metrics.json
 
 Lưu cùng kết quả: tên video checkpoint, frozen/tune, seed, batch size, macro-F1 validation/test, F1 bốn lớp và confusion matrix. Khi viết paper, chỉ so sánh fusion với baseline khi checkpoint, split và data pipeline tương ứng đều đã được ghi nhận.
 
-## 8. Điều gì được dùng lại từ baseline
+## 9. Điều gì được dùng lại từ baseline
 
 - `FishVoiceDataLoader._InnerDataset`: đọc waveform, mono, resample, cắt đầu/pad cuối, cache audio.
 - `AudioFrontend`, `PANNS_Cnn6`, `AudioModel`: frontend và encoder audio gốc.
