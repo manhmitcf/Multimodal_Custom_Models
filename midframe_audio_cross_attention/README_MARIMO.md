@@ -27,7 +27,7 @@ git pull --ff-only origin exp/midframe-to-audio-cross-attn
 Chạy các lệnh sau trong Terminal Marimo để tải raw dataset qua Git LFS. Chờ clone hoàn tất trước khi thực hiện bước di chuyển/xóa folder lồng nhau.
 
 ```bash
-sudo apt update && sudo apt install git-lfs -y
+sudo apt update && sudo apt install git-lfs unzip -y
 git lfs install
 git config --global lfs.concurrenttransfers 64
 nohup git clone https://huggingface.co/datasets/manhmitcf/Fish_Feeding_Intensity_Dataset > clone.log 2>&1 &
@@ -73,6 +73,47 @@ Multimodal_Custom_Models/
     └── tasks/
 ```
 
+## 4. Tải năm checkpoint đã chọn từ Hugging Face
+
+Checkpoint audio và bốn checkpoint video được public ở hai Hugging Face dataset repo. **Không clone cả repo checkpoint** vì còn nhiều artifact nặng không dùng đến. Cài Hugging Face CLI rồi dùng `hf download` để tải trực tiếp đúng năm file `.zip` dưới đây, giải nén vào `checkpoints/`, rồi xóa zip tạm:
+
+```bash
+cd /marimo/Multimodal_Custom_Models
+python -m pip install --upgrade "huggingface_hub[cli]"
+mkdir -p checkpoints /tmp/uffia_checkpoints
+
+hf download hoangphihung442004/Results_U_FFIA27K_audio PANNS_Cnn6_holdout_random_sample_20260729_153012.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
+hf download hoangphihung442004/Results_U_FFIA27K_video DenseNet121_holdout_random_sample_20260729_153012.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
+hf download hoangphihung442004/Results_U_FFIA27K_video EfficientNetB0_holdout_random_sample_20260804_181745.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
+hf download hoangphihung442004/Results_U_FFIA27K_video MobileNetV2_holdout_random_sample_20260729_153012.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
+hf download hoangphihung442004/Results_U_FFIA27K_video SwinTiny_holdout_random_sample_20260729_153012.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
+
+unzip -q /tmp/uffia_checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012.zip -d checkpoints/
+unzip -q /tmp/uffia_checkpoints/DenseNet121_holdout_random_sample_20260729_153012.zip -d checkpoints/
+unzip -q /tmp/uffia_checkpoints/EfficientNetB0_holdout_random_sample_20260804_181745.zip -d checkpoints/
+unzip -q /tmp/uffia_checkpoints/MobileNetV2_holdout_random_sample_20260729_153012.zip -d checkpoints/
+unzip -q /tmp/uffia_checkpoints/SwinTiny_holdout_random_sample_20260729_153012.zip -d checkpoints/
+
+rm -rf /tmp/uffia_checkpoints
+```
+
+Sau khi giải nén, `checkpoints/` phải có năm folder sau (không giữ đuôi `.zip`):
+
+```text
+PANNS_Cnn6_holdout_random_sample_20260729_153012/
+DenseNet121_holdout_random_sample_20260729_153012/
+EfficientNetB0_holdout_random_sample_20260804_181745/
+MobileNetV2_holdout_random_sample_20260729_153012/
+SwinTiny_holdout_random_sample_20260729_153012/
+```
+
+Kiểm tra năm file model trước khi chạy:
+
+```bash
+find checkpoints -type f -name "audio_best.pt" | wc -l
+find checkpoints -type f -name "video_best.pt" | wc -l
+```
+
 Dataset media trong CSV phải mount ở `/marimo/Fish_Feeding_Intensity_Dataset`. Kiểm tra trước khi chạy:
 
 ```bash
@@ -81,7 +122,7 @@ test -f ../checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio
 test -f ../checkpoints/SwinTiny_holdout_random_sample_20260729_153012/DL_video/checkpoint/swin_tiny/video_best.pt && echo "video checkpoint OK"
 ```
 
-## 4. Cài môi trường
+## 5. Cài môi trường
 
 ```bash
 python -m pip install --upgrade pip
@@ -90,7 +131,7 @@ python -m pip install -r requirements.txt
 
 Sau khi cài xong, cấu hình run trong JSON rồi chạy `python main.py`.
 
-## 5. Chỉ sửa một file config
+## 6. Chỉ sửa một file config
 
 Mọi tham số nằm trong [config/train_config.json](config/train_config.json). Không cần sửa Python để đổi thí nghiệm.
 
@@ -132,7 +173,7 @@ Giữ `data.cache_audio: true` và `data.video_cache_mode: "ram"` nếu muốn c
 
 Nếu CUDA out-of-memory, giảm `training.batch_size` (ví dụ `16 → 8 → 4`).
 
-## 6. Chạy một run
+## 7. Chạy một run
 
 `main.py` là entry point duy nhất:
 
@@ -158,7 +199,7 @@ test.csv  → đánh giá holdout cuối cùng một lần
 
 Không dùng test để chọn backbone, frozen/tune, epoch hoặc hyperparameter. Những lựa chọn này phải dựa trên `best_val_metrics.json` của các run trước.
 
-## 7. Log khi chạy
+## 8. Log khi chạy
 
 Terminal hiển thị log từ source baseline khi khởi tạo audio/video pipeline và một dòng JSON sau mỗi epoch, gồm `epoch`, `train_loss` và toàn bộ metric validation. Khi macro-F1 validation tốt hơn, `best.pt` cùng metric validation được ghi lại. Cuối run, terminal in toàn bộ metric test.
 
@@ -170,7 +211,7 @@ Khi báo cáo hoặc kiểm tra lỗi, cần theo dõi tối thiểu:
 - train loss, validation macro-F1, epoch tốt nhất;
 - test accuracy, macro-F1, per-class F1 và confusion matrix.
 
-## 8. Kết quả
+## 9. Kết quả
 
 `training.output_dir` xác định vị trí output. Config mặc định tạo:
 
@@ -192,7 +233,7 @@ python -m json.tool runs/swin_tiny_frozen_cross_attn/test_metrics.json
 
 Lưu cùng kết quả: tên video checkpoint, frozen/tune, seed, batch size, macro-F1 validation/test, F1 bốn lớp và confusion matrix. Khi viết paper, chỉ so sánh fusion với baseline khi checkpoint, split và data pipeline tương ứng đều đã được ghi nhận.
 
-## 9. Điều gì được dùng lại từ baseline
+## 10. Điều gì được dùng lại từ baseline
 
 - `FishVoiceDataLoader._InnerDataset`: đọc waveform, mono, resample, cắt đầu/pad cuối, cache audio.
 - `AudioFrontend`, `PANNS_Cnn6`, `AudioModel`: frontend và encoder audio gốc.
