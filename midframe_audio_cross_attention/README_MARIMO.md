@@ -75,7 +75,7 @@ Multimodal_Custom_Models/
 
 ## 4. Tải năm checkpoint đã chọn từ Hugging Face
 
-Checkpoint audio và bốn checkpoint video được public ở hai Hugging Face dataset repo. **Không clone cả repo checkpoint** vì còn nhiều artifact nặng không dùng đến. Cài Hugging Face CLI rồi dùng `hf download` để tải trực tiếp đúng năm file `.zip` dưới đây, giải nén vào `checkpoints/`, rồi xóa zip tạm:
+Checkpoint audio và bốn checkpoint video được public ở hai Hugging Face dataset repo. **Không clone cả repo checkpoint** vì còn nhiều artifact nặng không dùng đến. Cài Hugging Face CLI rồi dùng `hf download` để tải trực tiếp đúng năm file `.zip` dưới đây. Mỗi zip được giải nén vào folder checkpoint tương ứng; metadata `.git/` có trong archive bị bỏ qua, rồi zip tạm được xóa:
 
 ```bash
 cd /marimo/Multimodal_Custom_Models
@@ -88,11 +88,17 @@ hf download hoangphihung442004/Results_U_FFIA27K_video EfficientNetB0_holdout_ra
 hf download hoangphihung442004/Results_U_FFIA27K_video MobileNetV2_holdout_random_sample_20260729_153012.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
 hf download hoangphihung442004/Results_U_FFIA27K_video SwinTiny_holdout_random_sample_20260729_153012.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
 
-unzip -q /tmp/uffia_checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012.zip -d checkpoints/
-unzip -q /tmp/uffia_checkpoints/DenseNet121_holdout_random_sample_20260729_153012.zip -d checkpoints/
-unzip -q /tmp/uffia_checkpoints/EfficientNetB0_holdout_random_sample_20260804_181745.zip -d checkpoints/
-unzip -q /tmp/uffia_checkpoints/MobileNetV2_holdout_random_sample_20260729_153012.zip -d checkpoints/
-unzip -q /tmp/uffia_checkpoints/SwinTiny_holdout_random_sample_20260729_153012.zip -d checkpoints/
+mkdir -p checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012
+mkdir -p checkpoints/DenseNet121_holdout_random_sample_20260729_153012
+mkdir -p checkpoints/EfficientNetB0_holdout_random_sample_20260804_181745
+mkdir -p checkpoints/MobileNetV2_holdout_random_sample_20260729_153012
+mkdir -p checkpoints/SwinTiny_holdout_random_sample_20260729_153012
+
+unzip -q /tmp/uffia_checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012.zip -d checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012 -x '.git/*' '*/.git/*'
+unzip -q /tmp/uffia_checkpoints/DenseNet121_holdout_random_sample_20260729_153012.zip -d checkpoints/DenseNet121_holdout_random_sample_20260729_153012 -x '.git/*' '*/.git/*'
+unzip -q /tmp/uffia_checkpoints/EfficientNetB0_holdout_random_sample_20260804_181745.zip -d checkpoints/EfficientNetB0_holdout_random_sample_20260804_181745 -x '.git/*' '*/.git/*'
+unzip -q /tmp/uffia_checkpoints/MobileNetV2_holdout_random_sample_20260729_153012.zip -d checkpoints/MobileNetV2_holdout_random_sample_20260729_153012 -x '.git/*' '*/.git/*'
+unzip -q /tmp/uffia_checkpoints/SwinTiny_holdout_random_sample_20260729_153012.zip -d checkpoints/SwinTiny_holdout_random_sample_20260729_153012 -x '.git/*' '*/.git/*'
 
 rm -rf /tmp/uffia_checkpoints
 ```
