@@ -37,6 +37,9 @@ def main() -> None:
     np.random.seed(config.training.seed)
     torch.manual_seed(config.training.seed)
     device = resolve_device(config.training.device)
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
+        torch.set_float32_matmul_precision("high")
     stft_config = StftConfig(
         sample_rate=config.audio.sample_rate,
         duration_seconds=config.audio.duration_seconds,
@@ -83,6 +86,7 @@ def main() -> None:
         config.training.fusion_learning_rate,
         config.training.encoder_learning_rate,
         config.training.weight_decay,
+        config.training.mixed_precision,
     )
     trainer.fit_then_test(config.training.epochs)
 

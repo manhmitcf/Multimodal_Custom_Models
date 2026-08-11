@@ -18,6 +18,10 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
+def amp_enabled(device: torch.device, configured: bool) -> bool:
+    return bool(configured and device.type == "cuda")
+
+
 @dataclass(frozen=True)
 class EvaluationResult:
     accuracy: float
@@ -26,14 +30,15 @@ class EvaluationResult:
     confusion_matrix: list[list[int]]
 
 
-def evaluate(model: nn.Module, loader: DataLoader, device: torch.device, progress_desc: str = "Running model evaluation...") -> EvaluationResult:
+def evaluate(model: nn.Module, loader: DataLoader, device: torch.device, mixed_precision: bool = False, progress_desc: str = "Running model evaluation...") -> EvaluationResult:
     was_training = model.training
     model.eval()
     prediction_batches: list[torch.Tensor] = []
     target_batches: list[torch.Tensor] = []
     with torch.inference_mode():
         for batch in tqdm(loader, desc=progress_desc):
-            logits = model(batch["audio_features"].to(device), batch["image"].to(device))
+            with torch.autocast(device_type="cuda", enabled=amp_enabled(device, mixed_precision)):
+                logits = model(batch["audio_features"].to(device), batch["image"].to(device))
             prediction_batches.append(logits.argmax(dim=1).cpu())
             target_batches.append(batch["label"].cpu())
     if was_training:
@@ -50,12 +55,14 @@ def evaluate(model: nn.Module, loader: DataLoader, device: torch.device, progres
 
 
 class MultimodalTrainer:
-    def __init__(self, model: nn.Module, train_loader: DataLoader, val_loader: DataLoader, test_loader: DataLoader, device: torch.device, output_dir: Path, fusion_lr: float, encoder_lr: float, weight_decay: float) -> None:
+    def __init__(self, model: nn.Module, train_loader: DataLoader, val_loader: DataLoader, test_loader: DataLoader, device: torch.device, output_dir: Path, fusion_lr: float, encoder_lr: float, weight_decay: float, mixed_precision: bool) -> None:
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.test_loader = test_loader
         self.device = device
+        self.mixed_precision = amp_enabled(device, mixed_precision)
+        self.scaler = torch.amp.GradScaler("cuda", enabled=self.mixed_precision)
         self.output_dir = Path(output_dir)
         fusion = [parameter for name, parameter in model.named_parameters() if name.startswith("fusion.") and parameter.requires_grad]
         encoder = [parameter for name, parameter in model.named_parameters() if not name.startswith("fusion.") and parameter.requires_grad]
@@ -83,15 +90,17 @@ class MultimodalTrainer:
             for batch in pbar:
                 self.optimizer.zero_grad(set_to_none=True)
                 labels = batch["label"].to(self.device)
-                logits = self.model(batch["audio_features"].to(self.device), batch["image"].to(self.device))
-                loss = self.loss(logits, labels)
-                loss.backward()
-                self.optimizer.step()
+                with torch.autocast(device_type="cuda", enabled=self.mixed_precision):
+                    logits = self.model(batch["audio_features"].to(self.device), batch["image"].to(self.device))
+                    loss = self.loss(logits, labels)
+                self.scaler.scale(loss).backward()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
                 total_loss += loss.item() * labels.size(0)
                 total_samples += labels.size(0)
                 pbar.set_postfix({"Loss": f"{loss.item():.4f}", "Mean Loss": f"{total_loss / total_samples:.4f}"})
             train_loss = total_loss / total_samples
-            validation = evaluate(self.model, self.val_loader, self.device, progress_desc=f"Validation Epoch {epoch}/{epochs}")
+            validation = evaluate(self.model, self.val_loader, self.device, self.mixed_precision, progress_desc=f"Validation Epoch {epoch}/{epochs}")
             logger.info(
                 "Epoch %d/%d: Train Loss = %.5f | Val Accuracy = %.4f | Val Macro-F1 = %.4f | Val Per-class F1 = %s",
                 epoch,
@@ -109,7 +118,7 @@ class MultimodalTrainer:
         checkpoint = torch.load(self.output_dir / "best.pt", map_location=self.device, weights_only=False)
         self.model.load_state_dict(checkpoint["model_state_dict"], strict=True)
         logger.info("Training complete. Starting final holdout-test evaluation using best validation checkpoint...")
-        test = evaluate(self.model, self.test_loader, self.device, progress_desc="Final holdout test")
+        test = evaluate(self.model, self.test_loader, self.device, self.mixed_precision, progress_desc="Final holdout test")
         self._save_result("test", test)
         logger.info(
             "Holdout Test: Accuracy = %.4f | Macro-F1 = %.4f | Per-class F1 = %s | Confusion Matrix = %s",

@@ -78,6 +78,7 @@ class TrainingConfig:
     weight_decay: float
     seed: int
     device: str
+    mixed_precision: bool
     output_dir: Path
 
 

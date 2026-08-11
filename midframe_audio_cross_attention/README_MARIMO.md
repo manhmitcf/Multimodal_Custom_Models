@@ -44,17 +44,24 @@ rm -rf /marimo/Fish_Feeding_Intensity_Dataset/video/video
 
 ## 3. Checkpoint and immutable splits
 
-Download the PANNS archive for its immutable split CSV files, and the selected
-video checkpoint. The default config uses SwinTiny.
+Download the PANNS archive for its immutable split CSV files and **all four**
+video checkpoints. This lets you change `model.video_backbone` later without
+downloading more files.
 
 ```bash
 cd /marimo/Multimodal_Custom_Models
 python -m pip install --upgrade "huggingface_hub[cli]"
 mkdir -p checkpoints /tmp/uffia_checkpoints
 hf download hoangphihung442004/Results_U_FFIA27K_audio PANNS_Cnn6_holdout_random_sample_20260729_153012.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
+hf download hoangphihung442004/Results_U_FFIA27K_video DenseNet121_holdout_random_sample_20260729_153012.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
+hf download hoangphihung442004/Results_U_FFIA27K_video EfficientNetB0_holdout_random_sample_20260804_181745.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
+hf download hoangphihung442004/Results_U_FFIA27K_video MobileNetV2_holdout_random_sample_20260729_153012.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
 hf download hoangphihung442004/Results_U_FFIA27K_video SwinTiny_holdout_random_sample_20260729_153012.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
-mkdir -p checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012 checkpoints/SwinTiny_holdout_random_sample_20260729_153012
+mkdir -p checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012 checkpoints/DenseNet121_holdout_random_sample_20260729_153012 checkpoints/EfficientNetB0_holdout_random_sample_20260804_181745 checkpoints/MobileNetV2_holdout_random_sample_20260729_153012 checkpoints/SwinTiny_holdout_random_sample_20260729_153012
 unzip -q /tmp/uffia_checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012.zip -d checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012 -x '.git/*' '*/.git/*'
+unzip -q /tmp/uffia_checkpoints/DenseNet121_holdout_random_sample_20260729_153012.zip -d checkpoints/DenseNet121_holdout_random_sample_20260729_153012 -x '.git/*' '*/.git/*'
+unzip -q /tmp/uffia_checkpoints/EfficientNetB0_holdout_random_sample_20260804_181745.zip -d checkpoints/EfficientNetB0_holdout_random_sample_20260804_181745 -x '.git/*' '*/.git/*'
+unzip -q /tmp/uffia_checkpoints/MobileNetV2_holdout_random_sample_20260729_153012.zip -d checkpoints/MobileNetV2_holdout_random_sample_20260729_153012 -x '.git/*' '*/.git/*'
 unzip -q /tmp/uffia_checkpoints/SwinTiny_holdout_random_sample_20260729_153012.zip -d checkpoints/SwinTiny_holdout_random_sample_20260729_153012 -x '.git/*' '*/.git/*'
 rm -rf /tmp/uffia_checkpoints
 ```
@@ -102,3 +109,5 @@ Edit `config/train_config.json` only. Audio defaults are 256000 Hz,
 `n_fft=4096`, `frame_length=4096`, `hop_length=2048`, and pre-emphasis 0.97.
 Set `model.audio_positional_encoding` to `learned`, `sinusoidal`, or `none`.
 `model.visual_positional_encoding` controls only source-video grid tokens.
+The supplied config enables `training.mixed_precision: true`; AMP activates
+automatically when CUDA is available.

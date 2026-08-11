@@ -31,8 +31,8 @@
     "use_std": false
   },
   "model": {
-    "video_backbone": "swin_tiny",
-    "encoder_mode": "frozen",
+    "video_backbone": "mobilenet_v2",
+    "encoder_mode": "tune",
     "visual_grid_size": 4,
     "audio_positional_encoding": "learned",
     "visual_positional_encoding": "learned",
@@ -41,13 +41,14 @@
     "dropout": 0.1
   },
   "training": {
-    "batch_size": 16,
-    "epochs": 100,
-    "fusion_learning_rate": 0.001,
+    "batch_size": 32,
+    "epochs": 300,
+    "fusion_learning_rate": 0.0001,
     "encoder_learning_rate": 0.00001,
     "weight_decay": 0.0001,
     "seed": 42,
     "device": "auto",
-    "output_dir": "../runs/swin_tiny_stft256k_audio_learned_pos_cross_attn"
+    "mixed_precision": true,
+    "output_dir": "../runs/mobilenet_v2_stft256k_audio_learned_pos_cross_attn"
   }
 }
