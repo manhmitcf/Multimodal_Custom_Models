@@ -8,11 +8,12 @@ import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
 
-from models.reference_bridge import load_audio_reference, load_video_reference
+from models.reference_bridge import load_audio_reference
 from settings import RunConfig
 
 
 VIDEO_SPATIAL_CHANNELS = {"densenet121": 1024, "efficientnet_b0": 1280, "mobilenet_v2": 1280, "swin_tiny": 768}
+DINO_FEATURE_DIMS = {"dinov2_vits14_reg": 384}
 
 
 def _load_strict(model: nn.Module, checkpoint_path: Path) -> None:
@@ -88,8 +89,50 @@ class SourceVideoSpatialEncoder(nn.Module):
         return pooled.flatten(2).transpose(1, 2).contiguous()
 
 
-def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, SourceVideoSpatialEncoder]:
-    """Instantiate and strict-load only the original source model classes."""
+class DinoPatchTokenEncoder(nn.Module):
+    """DINOv2 patch-token adapter with optional tuning of its final blocks."""
+
+    def __init__(self, model_name: str, encoder_mode: str, tune_last_blocks: int) -> None:
+        super().__init__()
+        if model_name not in DINO_FEATURE_DIMS:
+            raise ValueError(f"Unsupported DINO model: {model_name}")
+        if encoder_mode not in {"frozen", "tune"}:
+            raise ValueError("DINO encoder_mode must be frozen or tune")
+        self.model = torch.hub.load("facebookresearch/dinov2", model_name)
+        self.feature_dim = DINO_FEATURE_DIMS[model_name]
+        self.encoder_mode = encoder_mode
+        self.tune_last_blocks = int(tune_last_blocks)
+        self._configure_training_parameters()
+
+    def _configure_training_parameters(self) -> None:
+        for parameter in self.model.parameters():
+            parameter.requires_grad = False
+        if self.encoder_mode == "frozen":
+            return
+        blocks = self.model.blocks
+        if not 1 <= self.tune_last_blocks <= len(blocks):
+            raise ValueError(f"dino_tune_last_blocks must be in [1, {len(blocks)}] when DINO is tuned")
+        for block in blocks[-self.tune_last_blocks :]:
+            for parameter in block.parameters():
+                parameter.requires_grad = True
+        for parameter in self.model.norm.parameters():
+            parameter.requires_grad = True
+
+    def forward(self, images: Tensor) -> Tensor:
+        features = self.model.forward_features(images)
+        try:
+            patch_tokens = features["x_norm_patchtokens"]
+        except KeyError as error:
+            raise RuntimeError("DINO forward_features must return x_norm_patchtokens") from error
+        if patch_tokens.ndim != 3 or patch_tokens.shape[-1] != self.feature_dim:
+            raise RuntimeError(
+                f"Expected DINO patch tokens [batch, tokens, {self.feature_dim}], got {tuple(patch_tokens.shape)}"
+            )
+        return patch_tokens
+
+
+def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, DinoPatchTokenEncoder]:
+    """Instantiate PANNS from its checkpoint and DINOv2 from Torch Hub."""
     audio_reference = load_audio_reference(config.references.audio_repo)
     frontend_config = audio_reference.AudioFeaturesConfig(
         sample_rate=64000,
@@ -109,12 +152,8 @@ def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, S
     )
     _load_strict(audio_model, config.audio_checkpoint)
 
-    video_reference = load_video_reference(config.references.video_repo)
-    backbone = video_reference.video_backbones[config.model.video_backbone](classes_num=4, pretrained=False)
-    video_model = video_reference.VideoModel(backbone=backbone)
-    _load_strict(video_model, config.video_checkpoint)
-    return SourceAudioTokenEncoder(audio_model), SourceVideoSpatialEncoder(
-        video_model,
-        config.model.video_backbone,
-        config.model.visual_grid_size,
+    return SourceAudioTokenEncoder(audio_model), DinoPatchTokenEncoder(
+        config.model.dino_model,
+        config.model.dino_encoder_mode,
+        config.model.dino_tune_last_blocks,
     )

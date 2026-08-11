@@ -99,6 +99,62 @@ class SpatialCrossAttentionHead(nn.Module):
         return self.concat_classifier(torch.cat((audio_tokens.mean(dim=1), video_tokens.mean(dim=1)), dim=1))
 
 
+class DinoCrossAttentionHead(nn.Module):
+    """DINO patch queries attend to contextual PANNS audio tokens."""
+
+    def __init__(
+        self,
+        audio_dim: int,
+        visual_dim: int,
+        d_model: int,
+        num_heads: int,
+        audio_positional_encoding: str,
+        dropout: float = 0.1,
+    ) -> None:
+        super().__init__()
+        if audio_positional_encoding not in {"none", "learned", "sinusoidal"}:
+            raise ValueError("audio_positional_encoding must be none, learned, or sinusoidal")
+        self.audio_projection = nn.Linear(audio_dim, d_model)
+        self.visual_projection = nn.Sequential(nn.Linear(visual_dim, d_model), nn.LayerNorm(d_model))
+        self.audio_positional_encoding = audio_positional_encoding
+        if audio_positional_encoding == "learned":
+            self.audio_positions = nn.Parameter(Tensor(1, 6, d_model).normal_(mean=0.0, std=0.02))
+        elif audio_positional_encoding == "sinusoidal":
+            self.register_buffer("audio_positions", _sinusoidal_1d(6, d_model), persistent=False)
+        else:
+            self.audio_positions = None
+        # DINO patch tokens already contain spatial position information.
+        self.visual_positions = None
+        self.audio_self_attention = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=num_heads,
+            dim_feedforward=d_model * 4,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+        )
+        self.cross_attention = nn.MultiheadAttention(d_model, num_heads, dropout=dropout, batch_first=True)
+        self.cross_norm = nn.LayerNorm(d_model)
+        self.ffn = nn.Sequential(nn.Linear(d_model, d_model * 4), nn.GELU(), nn.Dropout(dropout), nn.Linear(d_model * 4, d_model))
+        self.ffn_norm = nn.LayerNorm(d_model)
+        self.classifier = nn.Linear(d_model, 4)
+
+    def forward(self, audio_tokens: Tensor, visual_tokens: Tensor) -> tuple[Tensor, Tensor]:
+        if audio_tokens.ndim != 3 or audio_tokens.shape[1] != 6:
+            raise ValueError("audio tokens must have shape [batch, 6, channels]")
+        if visual_tokens.ndim != 3:
+            raise ValueError("DINO patch tokens must have shape [batch, patches, channels]")
+        audio = self.audio_projection(audio_tokens)
+        visual = self.visual_projection(visual_tokens)
+        if self.audio_positions is not None:
+            audio = audio + self.audio_positions
+        audio = self.audio_self_attention(audio)
+        attended, attention = self.cross_attention(visual, audio, audio, need_weights=True, average_attn_weights=False)
+        fused = self.cross_norm(visual + attended)
+        fused = self.ffn_norm(fused + self.ffn(fused))
+        return self.classifier(fused.mean(dim=1)), attention
+
+
 class BaselineSourceMultimodal(nn.Module):
     """Source encoders plus the spatial-token cross-attention fusion architecture."""
 
@@ -164,3 +220,58 @@ class BaselineSourceMultimodal(nn.Module):
 
     def forward_concat_baseline(self, waveforms: Tensor, images: Tensor) -> Tensor:
         return self.fusion.concat_baseline(self.audio_encoder(waveforms), self.video_encoder(images))
+
+
+class PannsDinoMultimodal(nn.Module):
+    """PANNS Cnn6 audio tokens fused with DINOv2 patch-token queries."""
+
+    def __init__(
+        self,
+        audio_encoder: nn.Module,
+        dino_encoder: nn.Module,
+        d_model: int,
+        num_heads: int,
+        audio_encoder_mode: str,
+        audio_positional_encoding: str,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        if audio_encoder_mode not in {"frozen", "tune"}:
+            raise ValueError("audio_encoder_mode must be frozen or tune")
+        self.audio_encoder = audio_encoder
+        self.dino_encoder = dino_encoder
+        self.audio_encoder_mode = audio_encoder_mode
+        self.fusion = DinoCrossAttentionHead(
+            audio_dim=audio_encoder.feature_dim,
+            visual_dim=dino_encoder.feature_dim,
+            d_model=d_model,
+            num_heads=num_heads,
+            audio_positional_encoding=audio_positional_encoding,
+            dropout=dropout,
+        )
+        self._configure_audio_encoder()
+
+    def _configure_audio_encoder(self) -> None:
+        for parameter in self.audio_encoder.parameters():
+            parameter.requires_grad = False
+        if self.audio_encoder_mode == "tune":
+            for name, parameter in self.audio_encoder.named_parameters():
+                if name.startswith("model.backbone.conv_block4") or name.startswith("model.backbone.fc1"):
+                    parameter.requires_grad = True
+
+    def train(self, mode: bool = True) -> "PannsDinoMultimodal":
+        super().train(mode)
+        if mode:
+            self.audio_encoder.eval()
+            self.dino_encoder.eval()
+            if self.audio_encoder_mode == "tune":
+                self.audio_encoder.model.backbone.conv_block4.train()
+                self.audio_encoder.model.backbone.fc1.train()
+            if self.dino_encoder.encoder_mode == "tune":
+                self.dino_encoder.model.blocks[-self.dino_encoder.tune_last_blocks :].train()
+                self.dino_encoder.model.norm.train()
+        return self
+
+    def forward(self, waveforms: Tensor, images: Tensor, return_attention: bool = False) -> Tensor | tuple[Tensor, Tensor]:
+        logits, attention = self.fusion(self.audio_encoder(waveforms), self.dino_encoder(images))
+        return (logits, attention) if return_attention else logits
