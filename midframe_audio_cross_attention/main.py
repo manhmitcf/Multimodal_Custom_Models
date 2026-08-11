@@ -9,9 +9,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from dataset.paired_loader import SourcePairedDataset, paired_collate
-from models.fusion_model import BaselineSourceMultimodal
-from models.source_encoders import build_source_encoders
+from dataset.paired_loader import SourcePairedDataset, paired_collate, read_immutable_split
+from features.stft_features import StftConfig, prepare_stft_cache
+from models.fusion_model import StftSpatialMultimodal
+from models.source_encoders import build_source_video_encoder
 from settings import RunConfig
 from tasks.trainer import MultimodalTrainer
 
@@ -36,19 +37,34 @@ def main() -> None:
     np.random.seed(config.training.seed)
     torch.manual_seed(config.training.seed)
     device = resolve_device(config.training.device)
-    audio_encoder, video_encoder = build_source_encoders(config)
-    model = BaselineSourceMultimodal(
-        audio_encoder,
+    stft_config = StftConfig(
+        sample_rate=config.audio.sample_rate,
+        duration_seconds=config.audio.duration_seconds,
+        window_seconds=config.audio.window_seconds,
+        hop_seconds=config.audio.token_hop_seconds,
+        pre_emphasis=config.audio.pre_emphasis,
+        frame_length=config.audio.frame_length,
+        hop_length=config.audio.hop_length,
+        n_fft=config.audio.n_fft,
+        windowing=config.audio.windowing,
+        use_std=config.audio.use_std,
+    )
+    records = {split: read_immutable_split(config.data.split_dir, split) for split in ("train", "val", "test")}
+    stft_cache_dir = prepare_stft_cache(records, config.data.stft_cache_dir, stft_config, config.data.num_workers)
+    video_encoder = build_source_video_encoder(config)
+    model = StftSpatialMultimodal(
         video_encoder,
+        audio_dim=stft_config.feature_dim,
         d_model=config.model.d_model,
         num_heads=config.model.num_heads,
         encoder_mode=config.model.encoder_mode,
-        positional_encoding=config.model.positional_encoding,
+        audio_positional_encoding=config.model.audio_positional_encoding,
+        visual_positional_encoding=config.model.visual_positional_encoding,
         dropout=config.model.dropout,
     ).to(device)
     loaders = {
         split: DataLoader(
-            SourcePairedDataset(config, split),
+            SourcePairedDataset(config, split, stft_cache_dir),
             batch_size=config.training.batch_size,
             shuffle=split == "train",
             num_workers=paired_loader_workers(),

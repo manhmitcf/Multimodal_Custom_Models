@@ -164,3 +164,53 @@ class BaselineSourceMultimodal(nn.Module):
 
     def forward_concat_baseline(self, waveforms: Tensor, images: Tensor) -> Tensor:
         return self.fusion.concat_baseline(self.audio_encoder(waveforms), self.video_encoder(images))
+
+
+class StftSpatialMultimodal(nn.Module):
+    """Mean-log-STFT audio tokens fused with unchanged source video spatial tokens."""
+
+    def __init__(self, video_encoder: nn.Module, audio_dim: int, d_model: int, num_heads: int, encoder_mode: str, audio_positional_encoding: str, visual_positional_encoding: str, dropout: float) -> None:
+        super().__init__()
+        self.video_encoder = video_encoder
+        self.encoder_mode = encoder_mode
+        self.fusion = SpatialCrossAttentionHead(audio_dim, video_encoder.feature_dim, d_model, num_heads, video_encoder.grid_size, visual_positional_encoding, dropout)
+        if audio_positional_encoding != visual_positional_encoding:
+            self._set_audio_positions(audio_positional_encoding, d_model)
+        self.configure_encoder_mode()
+
+    def _set_audio_positions(self, encoding: str, d_model: int) -> None:
+        self.fusion._parameters.pop("audio_positions", None)
+        self.fusion._buffers.pop("audio_positions", None)
+        self.fusion.__dict__.pop("audio_positions", None)
+        if encoding == "learned":
+            self.fusion.audio_positions = nn.Parameter(Tensor(1, 6, d_model).normal_(mean=0.0, std=0.02))
+        elif encoding == "sinusoidal":
+            self.fusion.register_buffer("audio_positions", _sinusoidal_1d(6, d_model), persistent=False)
+        elif encoding == "none":
+            self.fusion.audio_positions = None
+        else:
+            raise ValueError("audio_positional_encoding must be none, learned, or sinusoidal")
+
+    def configure_encoder_mode(self) -> None:
+        for parameter in self.video_encoder.parameters():
+            parameter.requires_grad = False
+        if self.encoder_mode == "tune":
+            video = {
+                "densenet121": ("model.backbone.model.features.denseblock4", "model.backbone.model.features.norm5"),
+                "efficientnet_b0": ("model.backbone.model.features.7", "model.backbone.model.features.8"),
+                "mobilenet_v2": tuple(f"model.backbone.model.features.{index}" for index in range(14, 19)),
+                "swin_tiny": ("model.backbone.model.features.7", "model.backbone.model.norm"),
+            }
+            for prefix in video[self.video_encoder.name]:
+                for parameter in self.video_encoder.get_submodule(prefix).parameters():
+                    parameter.requires_grad = True
+
+    def train(self, mode: bool = True) -> "StftSpatialMultimodal":
+        super().train(mode)
+        if mode:
+            self.video_encoder.eval()
+        return self
+
+    def forward(self, audio_features: Tensor, images: Tensor, return_attention: bool = False) -> Tensor | tuple[Tensor, Tensor]:
+        logits, attention = self.fusion(audio_features, self.video_encoder(images))
+        return (logits, attention) if return_attention else logits

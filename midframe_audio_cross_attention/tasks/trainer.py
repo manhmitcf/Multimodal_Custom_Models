@@ -33,7 +33,7 @@ def evaluate(model: nn.Module, loader: DataLoader, device: torch.device, progres
     target_batches: list[torch.Tensor] = []
     with torch.inference_mode():
         for batch in tqdm(loader, desc=progress_desc):
-            logits = model(batch["waveform"].to(device), batch["image"].to(device))
+            logits = model(batch["audio_features"].to(device), batch["image"].to(device))
             prediction_batches.append(logits.argmax(dim=1).cpu())
             target_batches.append(batch["label"].cpu())
     if was_training:
@@ -83,7 +83,7 @@ class MultimodalTrainer:
             for batch in pbar:
                 self.optimizer.zero_grad(set_to_none=True)
                 labels = batch["label"].to(self.device)
-                logits = self.model(batch["waveform"].to(self.device), batch["image"].to(self.device))
+                logits = self.model(batch["audio_features"].to(self.device), batch["image"].to(self.device))
                 loss = self.loss(logits, labels)
                 loss.backward()
                 self.optimizer.step()

@@ -37,10 +37,24 @@ class ReferenceConfig:
 @dataclass(frozen=True)
 class DataConfig:
     split_dir: Path
-    cache_audio: bool
+    stft_cache_dir: Path
     video_cache_mode: str
     num_workers: int
     image_size: int
+
+
+@dataclass(frozen=True)
+class StftAudioConfig:
+    sample_rate: int
+    duration_seconds: float
+    window_seconds: float
+    token_hop_seconds: float
+    pre_emphasis: float
+    frame_length: int
+    hop_length: int
+    n_fft: int
+    windowing: str
+    use_std: bool
 
 
 @dataclass(frozen=True)
@@ -48,7 +62,8 @@ class ModelConfig:
     video_backbone: str
     encoder_mode: str
     visual_grid_size: int
-    positional_encoding: str
+    audio_positional_encoding: str
+    visual_positional_encoding: str
     d_model: int
     num_heads: int
     dropout: float
@@ -69,8 +84,8 @@ class TrainingConfig:
 @dataclass(frozen=True)
 class RunConfig:
     references: ReferenceConfig
-    audio_checkpoint: Path
     video_checkpoint: Path
+    audio: StftAudioConfig
     data: DataConfig
     model: ModelConfig
     training: TrainingConfig
@@ -100,17 +115,18 @@ class RunConfig:
             ) from error
         data = DataConfig(
             split_dir=resolve(raw["data"]["split_dir"]),
-            cache_audio=bool(raw["data"]["cache_audio"]),
+            stft_cache_dir=resolve(raw["data"]["stft_cache_dir"]),
             video_cache_mode=str(raw["data"]["video_cache_mode"]),
             num_workers=resolve_num_workers(raw["data"]["num_workers"]),
             image_size=int(raw["data"]["image_size"]),
         )
+        audio = StftAudioConfig(**raw["audio"])
         training_raw: dict[str, Any] = {**raw["training"], "output_dir": resolve(raw["training"]["output_dir"])}
         training = TrainingConfig(**training_raw)
         config = cls(
             references=references,
-            audio_checkpoint=resolve(checkpoints["audio"]),
             video_checkpoint=resolve(video_checkpoint_value),
+            audio=audio,
             data=data,
             model=model,
             training=training,
@@ -123,22 +139,27 @@ class RunConfig:
             raise ValueError(f"model.video_backbone must be one of {sorted(_VALID_BACKBONES)}")
         if self.model.encoder_mode not in _VALID_ENCODER_MODES:
             raise ValueError(f"model.encoder_mode must be one of {sorted(_VALID_ENCODER_MODES)}")
-        if self.model.positional_encoding not in _VALID_POSITIONAL_ENCODINGS:
-            raise ValueError(f"model.positional_encoding must be one of {sorted(_VALID_POSITIONAL_ENCODINGS)}")
+        if self.model.audio_positional_encoding not in _VALID_POSITIONAL_ENCODINGS:
+            raise ValueError(f"model.audio_positional_encoding must be one of {sorted(_VALID_POSITIONAL_ENCODINGS)}")
+        if self.model.visual_positional_encoding not in _VALID_POSITIONAL_ENCODINGS:
+            raise ValueError(f"model.visual_positional_encoding must be one of {sorted(_VALID_POSITIONAL_ENCODINGS)}")
         if self.model.visual_grid_size <= 0:
             raise ValueError("model.visual_grid_size must be a positive integer")
         if self.data.video_cache_mode not in _VALID_CACHE_MODES:
             raise ValueError(f"data.video_cache_mode must be one of {sorted(_VALID_CACHE_MODES)}")
         if self.data.num_workers < 0:
             raise ValueError("data.num_workers must be -1 or a non-negative integer")
+        if self.audio.sample_rate != 256000:
+            raise ValueError("audio.sample_rate must be 256000 for the selected STFT baseline")
+        if self.audio.n_fft != self.audio.frame_length or self.audio.n_fft != 4096 or self.audio.hop_length != 2048:
+            raise ValueError("audio STFT requires frame_length=n_fft=4096 and hop_length=2048")
         if self.model.d_model <= 0 or self.model.d_model % self.model.num_heads:
             raise ValueError("model.d_model must be positive and divisible by model.num_heads")
-        if self.model.positional_encoding == "sinusoidal" and self.model.d_model % 4:
-            raise ValueError("model.d_model must be divisible by 4 when positional_encoding is sinusoidal")
+        if self.model.visual_positional_encoding == "sinusoidal" and self.model.d_model % 4:
+            raise ValueError("model.d_model must be divisible by 4 when visual_positional_encoding is sinusoidal")
         for path, description in (
             (self.references.audio_repo, "audio source repo"),
             (self.references.video_repo, "video source repo"),
-            (self.audio_checkpoint, "audio checkpoint"),
             (self.video_checkpoint, "video checkpoint"),
             (self.data.split_dir, "split directory"),
         ):

@@ -4,7 +4,6 @@
     "video_repo": "../../U_FFIA27K_video"
   },
   "checkpoints": {
-    "audio": "../../checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/audio_best.pt",
     "video_by_backbone": {
       "densenet121": "../../checkpoints/DenseNet121_holdout_random_sample_20260729_153012/DL_video/checkpoint/densenet121/video_best.pt",
       "efficientnet_b0": "../../checkpoints/EfficientNetB0_holdout_random_sample_20260804_181745/U_FFIA_video/checkpoint/efficientnet_b0/video_best.pt",
@@ -14,16 +13,29 @@
   },
   "data": {
     "split_dir": "../../checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/splits",
-    "cache_audio": true,
+    "stft_cache_dir": "../features",
     "video_cache_mode": "ram",
     "num_workers": -1,
     "image_size": 224
+  },
+  "audio": {
+    "sample_rate": 256000,
+    "duration_seconds": 2.0,
+    "window_seconds": 0.75,
+    "token_hop_seconds": 0.25,
+    "pre_emphasis": 0.97,
+    "frame_length": 4096,
+    "hop_length": 2048,
+    "n_fft": 4096,
+    "windowing": "hamming",
+    "use_std": false
   },
   "model": {
     "video_backbone": "swin_tiny",
     "encoder_mode": "frozen",
     "visual_grid_size": 4,
-    "positional_encoding": "learned",
+    "audio_positional_encoding": "learned",
+    "visual_positional_encoding": "learned",
     "d_model": 256,
     "num_heads": 4,
     "dropout": 0.1
@@ -36,6 +48,6 @@
     "weight_decay": 0.0001,
     "seed": 42,
     "device": "auto",
-    "output_dir": "../runs/swin_tiny_spatial4x4_learned_pos_cross_attn"
+    "output_dir": "../runs/swin_tiny_stft256k_audio_learned_pos_cross_attn"
   }
 }

@@ -6,6 +6,7 @@ torchcodec
 soundfile
 opencv-python
 numpy
+librosa
 scikit-learn
 pydantic
 pillow

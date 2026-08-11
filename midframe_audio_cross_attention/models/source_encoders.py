@@ -88,32 +88,13 @@ class SourceVideoSpatialEncoder(nn.Module):
         return pooled.flatten(2).transpose(1, 2).contiguous()
 
 
-def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, SourceVideoSpatialEncoder]:
-    """Instantiate and strict-load only the original source model classes."""
-    audio_reference = load_audio_reference(config.references.audio_repo)
-    frontend_config = audio_reference.AudioFeaturesConfig(
-        sample_rate=64000,
-        window_size=2048,
-        hop_size=1024,
-        mel_bins=128,
-        fmin=1,
-        fmax=32000,
-        time_drop_width=64,
-        time_stripes_num=2,
-        freq_drop_width=8,
-        freq_stripes_num=2,
-    )
-    audio_model = audio_reference.AudioModel(
-        frontend=audio_reference.AudioFrontend(config=frontend_config),
-        backbone=audio_reference.PANNS_Cnn6(classes_num=4),
-    )
-    _load_strict(audio_model, config.audio_checkpoint)
-
+def build_source_video_encoder(config: RunConfig) -> SourceVideoSpatialEncoder:
+    """Instantiate and strict-load the unchanged source video checkpoint."""
     video_reference = load_video_reference(config.references.video_repo)
     backbone = video_reference.video_backbones[config.model.video_backbone](classes_num=4, pretrained=False)
     video_model = video_reference.VideoModel(backbone=backbone)
     _load_strict(video_model, config.video_checkpoint)
-    return SourceAudioTokenEncoder(audio_model), SourceVideoSpatialEncoder(
+    return SourceVideoSpatialEncoder(
         video_model,
         config.model.video_backbone,
         config.model.visual_grid_size,
