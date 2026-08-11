@@ -6,13 +6,62 @@ import torch
 from torch import Tensor, nn
 
 
-class CrossAttentionHead(nn.Module):
-    def __init__(self, audio_dim: int, video_dim: int, d_model: int, num_heads: int, dropout: float = 0.1) -> None:
+def _sinusoidal_1d(length: int, d_model: int) -> Tensor:
+    positions = torch.arange(length, dtype=torch.float32).unsqueeze(1)
+    frequencies = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float32) * (-torch.log(torch.tensor(10000.0)) / d_model))
+    encoding = torch.zeros(length, d_model, dtype=torch.float32)
+    encoding[:, 0::2] = torch.sin(positions * frequencies)
+    encoding[:, 1::2] = torch.cos(positions * frequencies)
+    return encoding.unsqueeze(0)
+
+
+def _sinusoidal_2d(grid_size: int, d_model: int) -> Tensor:
+    if d_model % 4:
+        raise ValueError("d_model must be divisible by 4 for 2D sinusoidal visual positions")
+    row_encoding = _sinusoidal_1d(grid_size, d_model // 2).squeeze(0)
+    column_encoding = _sinusoidal_1d(grid_size, d_model // 2).squeeze(0)
+    positions = [torch.cat((row_encoding[row], column_encoding[column])) for row in range(grid_size) for column in range(grid_size)]
+    return torch.stack(positions).unsqueeze(0)
+
+
+class SpatialCrossAttentionHead(nn.Module):
+    """Audio/video token encoders followed by video-query-to-audio cross-attention."""
+
+    def __init__(
+        self,
+        audio_dim: int,
+        video_dim: int,
+        d_model: int,
+        num_heads: int,
+        visual_grid_size: int,
+        positional_encoding: str,
+        dropout: float = 0.1,
+    ) -> None:
         super().__init__()
+        if positional_encoding not in {"none", "learned", "sinusoidal"}:
+            raise ValueError("positional_encoding must be none, learned, or sinusoidal")
         self.audio_projection = nn.Linear(audio_dim, d_model)
         self.video_projection = nn.Linear(video_dim, d_model)
-        self.audio_positions = nn.Parameter(Tensor(1, 6, d_model).normal_(mean=0.0, std=0.02))
+        self.num_visual_tokens = visual_grid_size * visual_grid_size
+        self.positional_encoding = positional_encoding
+        if positional_encoding == "learned":
+            self.audio_positions = nn.Parameter(Tensor(1, 6, d_model).normal_(mean=0.0, std=0.02))
+            self.visual_positions = nn.Parameter(Tensor(1, self.num_visual_tokens, d_model).normal_(mean=0.0, std=0.02))
+        elif positional_encoding == "sinusoidal":
+            self.register_buffer("audio_positions", _sinusoidal_1d(6, d_model), persistent=False)
+            self.register_buffer("visual_positions", _sinusoidal_2d(visual_grid_size, d_model), persistent=False)
+        else:
+            self.audio_positions = None
+            self.visual_positions = None
         self.audio_self_attention = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=num_heads,
+            dim_feedforward=d_model * 4,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+        )
+        self.visual_self_attention = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=num_heads,
             dim_feedforward=d_model * 4,
@@ -29,31 +78,55 @@ class CrossAttentionHead(nn.Module):
             nn.Linear(audio_dim + video_dim, d_model), nn.GELU(), nn.Dropout(dropout), nn.Linear(d_model, 4)
         )
 
-    def forward(self, audio_tokens: Tensor, video_feature: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(self, audio_tokens: Tensor, video_tokens: Tensor) -> tuple[Tensor, Tensor]:
         if audio_tokens.ndim != 3 or audio_tokens.shape[1] != 6:
             raise ValueError("audio tokens must have shape [batch, 6, 512]")
-        audio = self.audio_self_attention(self.audio_projection(audio_tokens) + self.audio_positions)
-        query = self.video_projection(video_feature).unsqueeze(1)
-        attended, attention = self.cross_attention(query, audio, audio, need_weights=True, average_attn_weights=False)
-        fused = self.cross_norm(query + attended)
+        if video_tokens.ndim != 3 or video_tokens.shape[1] != self.num_visual_tokens:
+            raise ValueError(f"video tokens must have shape [batch, {self.num_visual_tokens}, channels]")
+        audio = self.audio_projection(audio_tokens)
+        visual = self.video_projection(video_tokens)
+        if self.audio_positions is not None:
+            audio = audio + self.audio_positions
+            visual = visual + self.visual_positions
+        audio = self.audio_self_attention(audio)
+        visual = self.visual_self_attention(visual)
+        attended, attention = self.cross_attention(visual, audio, audio, need_weights=True, average_attn_weights=False)
+        fused = self.cross_norm(visual + attended)
         fused = self.ffn_norm(fused + self.ffn(fused))
-        return self.classifier(fused.squeeze(1)), attention
+        return self.classifier(fused.mean(dim=1)), attention
 
-    def concat_baseline(self, audio_tokens: Tensor, video_feature: Tensor) -> Tensor:
-        return self.concat_classifier(torch.cat((audio_tokens.mean(dim=1), video_feature), dim=1))
+    def concat_baseline(self, audio_tokens: Tensor, video_tokens: Tensor) -> Tensor:
+        return self.concat_classifier(torch.cat((audio_tokens.mean(dim=1), video_tokens.mean(dim=1)), dim=1))
 
 
 class BaselineSourceMultimodal(nn.Module):
-    """Source encoders plus only the proposal's new fusion architecture."""
+    """Source encoders plus the spatial-token cross-attention fusion architecture."""
 
-    def __init__(self, audio_encoder: nn.Module, video_encoder: nn.Module, d_model: int, num_heads: int, encoder_mode: str, dropout: float) -> None:
+    def __init__(
+        self,
+        audio_encoder: nn.Module,
+        video_encoder: nn.Module,
+        d_model: int,
+        num_heads: int,
+        encoder_mode: str,
+        positional_encoding: str,
+        dropout: float,
+    ) -> None:
         super().__init__()
         if encoder_mode not in {"frozen", "tune"}:
             raise ValueError("encoder_mode must be frozen or tune")
         self.audio_encoder = audio_encoder
         self.video_encoder = video_encoder
         self.encoder_mode = encoder_mode
-        self.fusion = CrossAttentionHead(audio_encoder.feature_dim, video_encoder.feature_dim, d_model, num_heads, dropout)
+        self.fusion = SpatialCrossAttentionHead(
+            audio_encoder.feature_dim,
+            video_encoder.feature_dim,
+            d_model,
+            num_heads,
+            video_encoder.grid_size,
+            positional_encoding,
+            dropout,
+        )
         self.configure_encoder_mode()
 
     def _open_prefixes(self) -> tuple[str, ...]:

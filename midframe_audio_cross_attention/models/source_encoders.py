@@ -6,12 +6,13 @@ from pathlib import Path
 
 import torch
 from torch import Tensor, nn
+from torch.nn import functional as F
 
 from models.reference_bridge import load_audio_reference, load_video_reference
 from settings import RunConfig
 
 
-VIDEO_FEATURE_DIMS = {"densenet121": 1024, "efficientnet_b0": 1280, "mobilenet_v2": 1280, "swin_tiny": 768}
+VIDEO_SPATIAL_CHANNELS = {"densenet121": 1024, "efficientnet_b0": 1280, "mobilenet_v2": 1280, "swin_tiny": 768}
 
 
 def _load_strict(model: nn.Module, checkpoint_path: Path) -> None:
@@ -51,40 +52,43 @@ class SourceAudioTokenEncoder(nn.Module):
         return captured[0].reshape(batch_size, tokens, self.feature_dim)
 
 
-class SourceVideoFeatureEncoder(nn.Module):
-    """Uses original VideoModel; a new hook exposes the pre-classifier visual feature."""
+class SourceVideoSpatialEncoder(nn.Module):
+    """Uses original VideoModel; a new hook exposes its last spatial feature map."""
 
-    def __init__(self, model: nn.Module, name: str) -> None:
+    def __init__(self, model: nn.Module, name: str, grid_size: int) -> None:
         super().__init__()
         self.model = model
         self.name = name
-        self.feature_dim = VIDEO_FEATURE_DIMS[name]
+        self.feature_dim = VIDEO_SPATIAL_CHANNELS[name]
+        self.grid_size = grid_size
+        self.num_tokens = grid_size * grid_size
 
-    def _classifier(self) -> nn.Module:
-        network = self.model.backbone.model
-        if self.name == "densenet121":
-            return network.classifier
-        if self.name in {"efficientnet_b0", "mobilenet_v2"}:
-            return network.classifier[1]
-        return network.head
+    def _spatial_features(self) -> nn.Module:
+        return self.model.backbone.model.features
 
     def forward(self, images: Tensor) -> Tensor:
         captured: list[Tensor] = []
 
-        def save_pre_classifier(_module: nn.Module, inputs: tuple[Tensor, ...]) -> None:
-            captured.append(inputs[0])
+        def save_spatial_features(_module: nn.Module, _inputs: tuple[Tensor, ...], output: Tensor) -> None:
+            captured.append(output)
 
-        hook = self._classifier().register_forward_pre_hook(save_pre_classifier)
+        hook = self._spatial_features().register_forward_hook(save_spatial_features)
         try:
             self.model(images)
         finally:
             hook.remove()
-        if len(captured) != 1 or captured[0].shape[-1] != self.feature_dim:
-            raise RuntimeError(f"Could not capture expected {self.feature_dim}d {self.name} feature")
-        return captured[0]
+        if len(captured) != 1 or captured[0].ndim != 4:
+            raise RuntimeError(f"Could not capture a 4D spatial feature map from {self.name}")
+        feature_map = captured[0]
+        if self.name == "swin_tiny":
+            feature_map = feature_map.permute(0, 3, 1, 2).contiguous()
+        if feature_map.shape[1] != self.feature_dim:
+            raise RuntimeError(f"Expected {self.feature_dim} spatial channels from {self.name}, got {feature_map.shape[1]}")
+        pooled = F.adaptive_avg_pool2d(feature_map, (self.grid_size, self.grid_size))
+        return pooled.flatten(2).transpose(1, 2).contiguous()
 
 
-def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, SourceVideoFeatureEncoder]:
+def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, SourceVideoSpatialEncoder]:
     """Instantiate and strict-load only the original source model classes."""
     audio_reference = load_audio_reference(config.references.audio_repo)
     frontend_config = audio_reference.AudioFeaturesConfig(
@@ -109,4 +113,8 @@ def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, S
     backbone = video_reference.video_backbones[config.model.video_backbone](classes_num=4, pretrained=False)
     video_model = video_reference.VideoModel(backbone=backbone)
     _load_strict(video_model, config.video_checkpoint)
-    return SourceAudioTokenEncoder(audio_model), SourceVideoFeatureEncoder(video_model, config.model.video_backbone)
+    return SourceAudioTokenEncoder(audio_model), SourceVideoSpatialEncoder(
+        video_model,
+        config.model.video_backbone,
+        config.model.visual_grid_size,
+    )

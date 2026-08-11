@@ -1,25 +1,25 @@
-# Chạy multimodal trên Marimo
+# Chạy multimodal spatial visual tokens trên Marimo
 
-Folder này phát triển multimodal trực tiếp trên hai baseline gốc. Split holdout, cách đọc audio/video, cache và augmentation đều dùng source baseline; chỉ phần fusion là kiến trúc mới.
+Folder này phát triển multimodal trực tiếp trên hai baseline gốc. Split holdout, cách đọc audio/video, cache và augmentation đều dùng source baseline; chỉ phần visual-token fusion là kiến trúc mới.
 
 ## 1. Clone đúng repo và nhánh trên Marimo
 
-Trong Terminal của Marimo, clone trực tiếp nhánh thí nghiệm `exp/midframe-to-audio-cross-attn` từ repo chính:
+Trong Terminal của Marimo, clone trực tiếp nhánh thí nghiệm `exp/spatial-visual-tokens-cross-attn` từ repo chính:
 
 ```bash
 cd /marimo
-git clone --branch exp/midframe-to-audio-cross-attn --single-branch https://github.com/manhmitcf/Multimodal_Custom_Models.git
+git clone --branch exp/spatial-visual-tokens-cross-attn --single-branch https://github.com/manhmitcf/Multimodal_Custom_Models.git
 cd Multimodal_Custom_Models
 git status
 git branch --show-current
 ```
 
-Lệnh cuối phải in `exp/midframe-to-audio-cross-attn`. Nếu repo đã được clone từ trước, cập nhật đúng nhánh bằng:
+Lệnh cuối phải in `exp/spatial-visual-tokens-cross-attn`. Nếu repo đã được clone từ trước, cập nhật đúng nhánh bằng:
 
 ```bash
 cd /marimo/Multimodal_Custom_Models
-git switch exp/midframe-to-audio-cross-attn
-git pull --ff-only origin exp/midframe-to-audio-cross-attn
+git switch exp/spatial-visual-tokens-cross-attn
+git pull --ff-only origin exp/spatial-visual-tokens-cross-attn
 ```
 
 ## 2. Tải và chuẩn hóa dataset trên Marimo
@@ -150,7 +150,7 @@ Các nhóm quan trọng:
 | `references` | đường dẫn hai repo baseline; không đổi nếu giữ cấu trúc project mặc định |
 | `checkpoints` | audio checkpoint và bảng path cố định của bốn video checkpoint |
 | `data` | split CSV bất biến lấy thẳng từ checkpoint, cache audio/video, số worker, ảnh 224 |
-| `model` | video backbone, `frozen`/`tune`, kích thước fusion |
+| `model` | video backbone, `frozen`/`tune`, grid visual token, positional encoding, kích thước fusion |
 | `training` | batch size, epoch, LR, seed, device, thư mục kết quả |
 
 Chỉ đổi `model.video_backbone` để chọn một trong bốn encoder video. Code tự lấy path tương ứng từ `checkpoints.video_by_backbone`, nên không thể lẫn kiến trúc MobileNetV2 và checkpoint SwinTiny. Giữ đủ bốn path trong bảng này:
@@ -173,6 +173,22 @@ checkpoints/.../panns_cnn6/splits/test.csv
 Không đặt `data.split_dir` trỏ về dataset gốc và không chạy `FishDataSplitter`: multimodal không tạo lại, không xáo trộn và không ghi đè split. Các split checkpoint hiện có gồm 21,467 train, 2,800 validation, 2,800 test.
 
 `data.num_workers: -1` dùng đúng quy tắc auto của baseline: CPU không xác định/≤0 dùng `0`; đúng 2 CPU dùng `1`; các trường hợp khác dùng `CPU // 2 + 1`. Giá trị này chỉ dùng cho preload/cache audio và video của baseline. Paired `DataLoader` multimodal luôn dùng `0` worker để tránh tạo process phụ có thể nhân bản cache RAM; điều này không đổi split hay preprocessing.
+
+Kiến trúc spatial visual tokens:
+
+```text
+Audio 2 giây → 6 cửa sổ 0.75 giây → Logmel + PANNS Cnn6 → 6 audio token 512D
+Midframe → feature map trước global pooling của video baseline → adaptive pool grid 4×4 → 16 visual token
+6 audio token + positional encoding (tùy chọn)  → audio Transformer self-attention + residual
+16 visual token + positional encoding (tùy chọn) → visual Transformer self-attention + residual
+visual token làm Query; audio token làm Key/Value → cross-attention → mean-pool 16 visual token → classifier 4 lớp
+```
+
+`model.visual_grid_size` mặc định `4`, tức 16 visual token. Có thể đặt `7` để giữ 49 token của feature map 7×7, nhưng tốn GPU và dễ overfit hơn. `model.positional_encoding` dùng một trong ba giá trị:
+
+- `learned`: embedding vị trí trainable cho cả 6 audio token và visual grid; mặc định khuyến nghị.
+- `sinusoidal`: encoding sin/cos cố định, không thêm parameter trainable.
+- `none`: ablation không dùng thông tin vị trí.
 
 Chế độ encoder:
 
@@ -226,7 +242,7 @@ Khi báo cáo hoặc kiểm tra lỗi, cần theo dõi tối thiểu:
 `training.output_dir` xác định vị trí output. Config mặc định tạo:
 
 ```text
-runs/swin_tiny_frozen_cross_attn/
+runs/swin_tiny_spatial4x4_learned_pos_cross_attn/
 ├── best.pt
 ├── best_val_metrics.json
 ├── best_val_confusion_matrix.csv
@@ -237,8 +253,8 @@ runs/swin_tiny_frozen_cross_attn/
 Đọc metric:
 
 ```bash
-python -m json.tool runs/swin_tiny_frozen_cross_attn/best_val_metrics.json
-python -m json.tool runs/swin_tiny_frozen_cross_attn/test_metrics.json
+python -m json.tool runs/swin_tiny_spatial4x4_learned_pos_cross_attn/best_val_metrics.json
+python -m json.tool runs/swin_tiny_spatial4x4_learned_pos_cross_attn/test_metrics.json
 ```
 
 Lưu cùng kết quả: tên video checkpoint, frozen/tune, seed, batch size, macro-F1 validation/test, F1 bốn lớp và confusion matrix. Khi viết paper, chỉ so sánh fusion với baseline khi checkpoint, split và data pipeline tương ứng đều đã được ghi nhận.
@@ -251,4 +267,4 @@ Lưu cùng kết quả: tên video checkpoint, frozen/tune, seed, batch size, ma
 - `VideoTransform`, `VideoModel`, DenseNet/EfficientNet/MobileNet/Swin source: pipeline và encoder ảnh gốc.
 - Ba split CSV đã lưu cùng checkpoint: 21,467 train, 2,800 validation, 2,800 test.
 
-Paired wrapper chỉ đảm bảo audio path, video path và label cùng record trước mỗi batch. Phần mới duy nhất là sáu audio window, lấy feature trước classifier và cross-attention theo proposal.
+Paired wrapper chỉ đảm bảo audio path, video path và label cùng record trước mỗi batch. Phần mới duy nhất là sáu audio window, visual feature map trước global pooling, positional encoding tùy chọn, hai Transformer self-attention và cross-attention.

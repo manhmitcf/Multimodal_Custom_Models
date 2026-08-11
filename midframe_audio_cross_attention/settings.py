@@ -12,6 +12,7 @@ from typing import Any
 _VALID_BACKBONES = {"densenet121", "efficientnet_b0", "mobilenet_v2", "swin_tiny"}
 _VALID_ENCODER_MODES = {"frozen", "tune"}
 _VALID_CACHE_MODES = {"disk", "ram", "none"}
+_VALID_POSITIONAL_ENCODINGS = {"none", "learned", "sinusoidal"}
 
 
 def resolve_num_workers(value: int) -> int:
@@ -46,6 +47,8 @@ class DataConfig:
 class ModelConfig:
     video_backbone: str
     encoder_mode: str
+    visual_grid_size: int
+    positional_encoding: str
     d_model: int
     num_heads: int
     dropout: float
@@ -120,12 +123,18 @@ class RunConfig:
             raise ValueError(f"model.video_backbone must be one of {sorted(_VALID_BACKBONES)}")
         if self.model.encoder_mode not in _VALID_ENCODER_MODES:
             raise ValueError(f"model.encoder_mode must be one of {sorted(_VALID_ENCODER_MODES)}")
+        if self.model.positional_encoding not in _VALID_POSITIONAL_ENCODINGS:
+            raise ValueError(f"model.positional_encoding must be one of {sorted(_VALID_POSITIONAL_ENCODINGS)}")
+        if self.model.visual_grid_size <= 0:
+            raise ValueError("model.visual_grid_size must be a positive integer")
         if self.data.video_cache_mode not in _VALID_CACHE_MODES:
             raise ValueError(f"data.video_cache_mode must be one of {sorted(_VALID_CACHE_MODES)}")
         if self.data.num_workers < 0:
             raise ValueError("data.num_workers must be -1 or a non-negative integer")
         if self.model.d_model <= 0 or self.model.d_model % self.model.num_heads:
             raise ValueError("model.d_model must be positive and divisible by model.num_heads")
+        if self.model.positional_encoding == "sinusoidal" and self.model.d_model % 4:
+            raise ValueError("model.d_model must be divisible by 4 when positional_encoding is sinusoidal")
         for path, description in (
             (self.references.audio_repo, "audio source repo"),
             (self.references.video_repo, "video source repo"),

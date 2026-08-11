@@ -43,6 +43,7 @@ def main() -> None:
         d_model=config.model.d_model,
         num_heads=config.model.num_heads,
         encoder_mode=config.model.encoder_mode,
+        positional_encoding=config.model.positional_encoding,
         dropout=config.model.dropout,
     ).to(device)
     loaders = {
