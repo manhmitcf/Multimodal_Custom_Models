@@ -267,9 +267,8 @@ class PannsDinoMultimodal(nn.Module):
             if self.audio_encoder_mode == "tune":
                 self.audio_encoder.model.backbone.conv_block4.train()
                 self.audio_encoder.model.backbone.fc1.train()
-            if self.dino_encoder.encoder_mode == "tune":
-                self.dino_encoder.model.blocks[-self.dino_encoder.tune_last_blocks :].train()
-                self.dino_encoder.model.norm.train()
+            if self.dino_encoder.encoder_mode == "full":
+                self.dino_encoder.model.train()
         return self
 
     def forward(self, waveforms: Tensor, images: Tensor, return_attention: bool = False) -> Tensor | tuple[Tensor, Tensor]:

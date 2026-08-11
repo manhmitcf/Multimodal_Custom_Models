@@ -15,8 +15,7 @@
   },
   "model": {
     "dino_model": "dinov2_vits14_reg",
-    "dino_encoder_mode": "frozen",
-    "dino_tune_last_blocks": 2,
+    "dino_encoder_mode": "full",
     "audio_encoder_mode": "frozen",
     "audio_positional_encoding": "learned",
     "d_model": 256,

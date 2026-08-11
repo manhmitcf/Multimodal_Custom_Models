@@ -11,6 +11,7 @@ from typing import Any
 
 _VALID_DINO_MODELS = {"dinov2_vits14_reg"}
 _VALID_ENCODER_MODES = {"frozen", "tune"}
+_VALID_DINO_ENCODER_MODES = {"frozen", "full"}
 _VALID_CACHE_MODES = {"disk", "ram", "none"}
 _VALID_POSITIONAL_ENCODINGS = {"none", "learned", "sinusoidal"}
 
@@ -47,7 +48,6 @@ class DataConfig:
 class ModelConfig:
     dino_model: str
     dino_encoder_mode: str
-    dino_tune_last_blocks: int
     audio_encoder_mode: str
     audio_positional_encoding: str
     d_model: int
@@ -113,16 +113,12 @@ class RunConfig:
     def validate(self) -> None:
         if self.model.dino_model not in _VALID_DINO_MODELS:
             raise ValueError(f"model.dino_model must be one of {sorted(_VALID_DINO_MODELS)}")
-        if self.model.dino_encoder_mode not in _VALID_ENCODER_MODES:
-            raise ValueError(f"model.dino_encoder_mode must be one of {sorted(_VALID_ENCODER_MODES)}")
+        if self.model.dino_encoder_mode not in _VALID_DINO_ENCODER_MODES:
+            raise ValueError(f"model.dino_encoder_mode must be one of {sorted(_VALID_DINO_ENCODER_MODES)}")
         if self.model.audio_encoder_mode not in _VALID_ENCODER_MODES:
             raise ValueError(f"model.audio_encoder_mode must be one of {sorted(_VALID_ENCODER_MODES)}")
         if self.model.audio_positional_encoding not in _VALID_POSITIONAL_ENCODINGS:
             raise ValueError(f"model.audio_positional_encoding must be one of {sorted(_VALID_POSITIONAL_ENCODINGS)}")
-        if self.model.dino_tune_last_blocks < 0:
-            raise ValueError("model.dino_tune_last_blocks must be non-negative")
-        if self.model.dino_encoder_mode == "tune" and self.model.dino_tune_last_blocks == 0:
-            raise ValueError("model.dino_tune_last_blocks must be positive when model.dino_encoder_mode is tune")
         if self.data.video_cache_mode not in _VALID_CACHE_MODES:
             raise ValueError(f"data.video_cache_mode must be one of {sorted(_VALID_CACHE_MODES)}")
         if self.data.num_workers < 0:

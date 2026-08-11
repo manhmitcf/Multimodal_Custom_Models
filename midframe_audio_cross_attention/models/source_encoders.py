@@ -90,33 +90,25 @@ class SourceVideoSpatialEncoder(nn.Module):
 
 
 class DinoPatchTokenEncoder(nn.Module):
-    """DINOv2 patch-token adapter with optional tuning of its final blocks."""
+    """DINOv2 patch-token adapter with frozen or full fine-tuning modes."""
 
-    def __init__(self, model_name: str, encoder_mode: str, tune_last_blocks: int) -> None:
+    def __init__(self, model_name: str, encoder_mode: str) -> None:
         super().__init__()
         if model_name not in DINO_FEATURE_DIMS:
             raise ValueError(f"Unsupported DINO model: {model_name}")
-        if encoder_mode not in {"frozen", "tune"}:
-            raise ValueError("DINO encoder_mode must be frozen or tune")
+        if encoder_mode not in {"frozen", "full"}:
+            raise ValueError("DINO encoder_mode must be frozen or full")
         self.model = torch.hub.load("facebookresearch/dinov2", model_name)
         self.feature_dim = DINO_FEATURE_DIMS[model_name]
         self.encoder_mode = encoder_mode
-        self.tune_last_blocks = int(tune_last_blocks)
         self._configure_training_parameters()
 
     def _configure_training_parameters(self) -> None:
         for parameter in self.model.parameters():
             parameter.requires_grad = False
-        if self.encoder_mode == "frozen":
-            return
-        blocks = self.model.blocks
-        if not 1 <= self.tune_last_blocks <= len(blocks):
-            raise ValueError(f"dino_tune_last_blocks must be in [1, {len(blocks)}] when DINO is tuned")
-        for block in blocks[-self.tune_last_blocks :]:
-            for parameter in block.parameters():
+        if self.encoder_mode == "full":
+            for parameter in self.model.parameters():
                 parameter.requires_grad = True
-        for parameter in self.model.norm.parameters():
-            parameter.requires_grad = True
 
     def forward(self, images: Tensor) -> Tensor:
         features = self.model.forward_features(images)
@@ -155,5 +147,4 @@ def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, D
     return SourceAudioTokenEncoder(audio_model), DinoPatchTokenEncoder(
         config.model.dino_model,
         config.model.dino_encoder_mode,
-        config.model.dino_tune_last_blocks,
     )

@@ -142,19 +142,17 @@ Edit only `config/train_config.json` to configure a run.
 | Key | Purpose |
 | --- | --- |
 | `model.dino_model` | Currently `dinov2_vits14_reg` (384-dimensional patch embeddings). |
-| `model.dino_encoder_mode` | `frozen` trains no DINO parameters; `tune` opens the final DINO blocks. |
-| `model.dino_tune_last_blocks` | Number of final DINO Transformer blocks to train when mode is `tune`, e.g. `2` or `4`. |
+| `model.dino_encoder_mode` | `frozen` trains no DINO parameters; `full` fine-tunes every DINOv2 parameter. |
 | `model.audio_encoder_mode` | `frozen` or `tune` for PANNS Cnn6 (`conv_block4` and `fc1` are opened in tune mode). |
 | `model.audio_positional_encoding` | `learned`, `sinusoidal`, or `none`; this applies only to the six audio tokens. |
 | `model.d_model` | Shared fusion dimension; the default is 256. |
 | `training.fusion_learning_rate` | Learning rate for projections, audio attention, cross-attention, FFN, and classifier. |
 | `training.encoder_learning_rate` | Lower learning rate for any enabled PANNS/DINO parameters. |
 
-The recommended first experiment is `dino_encoder_mode: "frozen"`,
-`audio_encoder_mode: "frozen"`, and
-`audio_positional_encoding: "learned"`. After selecting the baseline using
-validation macro-F1, try `dino_encoder_mode: "tune"` with
-`dino_tune_last_blocks: 2`. Do not tune on the holdout test set.
+The current configuration uses `dino_encoder_mode: "full"`, so every DINOv2
+parameter is trainable. Keep `training.encoder_learning_rate` much lower than
+the fusion learning rate, and reduce batch size if GPU memory is insufficient.
+Do not choose this setting using the holdout test set.
 
 ## Data and caching
 
