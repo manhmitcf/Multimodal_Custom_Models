@@ -1,4 +1,4 @@
-"""Upload final CSV result files to a Hugging Face Dataset without storing tokens."""
+"""Upload final result files to a Hugging Face Dataset without storing tokens."""
 
 from __future__ import annotations
 
@@ -12,7 +12,12 @@ from settings import ResultsUploadConfig
 
 logger = logging.getLogger(__name__)
 
-RESULT_FILENAMES = ("best_val_confusion_matrix.csv", "test_confusion_matrix.csv")
+RESULT_ARTIFACT_FILENAMES = (
+    "best_val_metrics.json",
+    "best_val_confusion_matrix.csv",
+    "test_metrics.json",
+    "test_confusion_matrix.csv",
+)
 
 
 def result_path_in_repo(path_prefix: str, run_name: str, timestamp: str, filename: str) -> str:
@@ -32,15 +37,15 @@ def _resolve_token() -> str | None:
     return get_token()
 
 
-def upload_result_csvs(config: ResultsUploadConfig, output_dir: Path) -> None:
-    """Upload final validation/test confusion CSVs and preserve local results on failure."""
+def upload_result_files(config: ResultsUploadConfig, output_dir: Path) -> None:
+    """Upload final validation/test metrics and confusion files; preserve local results on failure."""
     if not config.enabled:
         logger.info("Hugging Face result upload is disabled.")
         return
-    csv_files = [Path(output_dir) / filename for filename in RESULT_FILENAMES]
-    missing = [str(path) for path in csv_files if not path.is_file()]
+    result_files = [Path(output_dir) / filename for filename in RESULT_ARTIFACT_FILENAMES]
+    missing = [str(path) for path in result_files if not path.is_file()]
     if missing:
-        logger.warning("Skipping Hugging Face result upload because CSV outputs are missing: %s", missing)
+        logger.warning("Skipping Hugging Face result upload because final output files are missing: %s", missing)
         return
     token = _resolve_token()
     if not token:
@@ -58,15 +63,15 @@ def upload_result_csvs(config: ResultsUploadConfig, output_dir: Path) -> None:
             )
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_name = Path(output_dir).name
-        for csv_file in csv_files:
-            destination = result_path_in_repo(config.path_prefix, run_name, timestamp, csv_file.name)
+        for result_file in result_files:
+            destination = result_path_in_repo(config.path_prefix, run_name, timestamp, result_file.name)
             upload_file(
-                path_or_fileobj=str(csv_file),
+                path_or_fileobj=str(result_file),
                 path_in_repo=destination,
                 repo_id=config.repo_id,
                 repo_type=config.repo_type,
                 token=token,
             )
-            logger.info("Uploaded result CSV to Hugging Face: %s", destination)
+            logger.info("Uploaded result file to Hugging Face: %s", destination)
     except Exception:
-        logger.exception("Hugging Face result upload failed; local CSV files remain in '%s'.", output_dir)
+        logger.exception("Hugging Face result upload failed; local result files remain in '%s'.", output_dir)

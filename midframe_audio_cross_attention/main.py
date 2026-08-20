@@ -18,7 +18,7 @@ from models.source_encoders import build_source_encoders
 from settings import RunConfig
 from tasks.ibot_trainer import IbotTrainer
 from tasks.trainer import MultimodalTrainer
-from utils.huggingface_results import upload_result_csvs
+from utils.huggingface_results import upload_result_files
 
 
 CONFIG_PATH = Path(__file__).parent / "config" / "train_config.json"
@@ -109,7 +109,7 @@ def main() -> None:
         config.training.weight_decay,
     )
     trainer.fit_then_test(config.training.epochs)
-    upload_result_csvs(config.results_upload, config.training.output_dir)
+    upload_result_files(config.results_upload, config.training.output_dir)
 
 
 if __name__ == "__main__":

@@ -149,9 +149,11 @@ batch sizes together when reporting the experiment.
 
 ## Upload CSV results to Hugging Face
 
-All supplied JSON files upload the final validation and holdout confusion
-matrix CSVs to the Hugging Face Dataset `manhmitcf/fish_result` after training
-has completed successfully. The upload path includes the run name and a
+All supplied JSON files upload the final validation and holdout results to the
+Hugging Face Dataset `manhmitcf/fish_result` after training has completed
+successfully. Each upload contains `best_val_metrics.json`,
+`best_val_confusion_matrix.csv`, `test_metrics.json`, and
+`test_confusion_matrix.csv`. The upload path includes the run name and a
 timestamp, so previous runs are not overwritten.
 
 Authenticate once on Marimo before starting a run. Do not put a token in a
