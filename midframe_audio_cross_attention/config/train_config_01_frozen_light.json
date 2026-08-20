@@ -1,0 +1,52 @@
+{
+  "references": {
+    "audio_repo": "../../U_FFIA27K_audio",
+    "video_repo": "../../U_FFIA27K_video"
+  },
+  "checkpoints": {
+    "audio": "../../checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/audio_best.pt",
+    "video_by_backbone": {
+      "densenet121": "../../checkpoints/DenseNet121_holdout_random_sample_20260729_153012/DL_video/checkpoint/densenet121/video_best.pt",
+      "efficientnet_b0": "../../checkpoints/EfficientNetB0_holdout_random_sample_20260804_181745/U_FFIA_video/checkpoint/efficientnet_b0/video_best.pt",
+      "mobilenet_v2": "../../checkpoints/MobileNetV2_holdout_random_sample_20260729_153012/DL_video/checkpoint/mobilenet_v2/video_best.pt",
+      "swin_tiny": "../../checkpoints/SwinTiny_holdout_random_sample_20260729_153012/DL_video/checkpoint/swin_tiny/video_best.pt"
+    }
+  },
+  "data": {
+    "split_dir": "../../checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/splits",
+    "cache_audio": true,
+    "video_cache_mode": "ram",
+    "num_workers": -1,
+    "image_size": 224
+  },
+  "model": {
+    "video_backbone": "swin_tiny",
+    "encoder_mode": "frozen",
+    "d_model": 256,
+    "num_heads": 4,
+    "dropout": 0.1
+  },
+  "training": {
+    "batch_size": 16,
+    "epochs": 100,
+    "fusion_learning_rate": 0.001,
+    "encoder_learning_rate": 0.00001,
+    "weight_decay": 0.0001,
+    "seed": 42,
+    "device": "auto",
+    "output_dir": "../runs/01_frozen_light"
+  },
+  "ibot_pretraining": {
+    "enabled": true,
+    "epochs": 30,
+    "batch_size": 32,
+    "learning_rate": 0.00002,
+    "weight_decay": 0.04,
+    "ema_momentum": 0.996,
+    "mask_ratio": 0.3,
+    "num_prototypes": 1024,
+    "student_temperature": 0.1,
+    "teacher_temperature": 0.07,
+    "output_dir": "../runs/01_frozen_light/ibot_pretraining"
+  }
+}

@@ -111,6 +111,25 @@ Edit only `config/train_config.json`.
 - `data.split_dir` must point to the archived PANNS `splits/` directory. Never
   regenerate or overwrite the split.
 
+## Ordered experiment configurations
+
+Four ready-to-run sweeps are in `config/`. They preserve the same checkpoint,
+split, seed, and data policy; only iBOT strength and supervised fine-tuning
+change. Run exactly one at a time:
+
+```bash
+python main.py --config config/train_config_01_frozen_light.json
+python main.py --config config/train_config_02_frozen_standard.json
+python main.py --config config/train_config_03_tune_gentle.json
+python main.py --config config/train_config_04_tune_strong_mask.json
+```
+
+- `01`: conservative 30-epoch iBOT adaptation; frozen encoders.
+- `02`: standard 50-epoch iBOT adaptation; frozen encoders.
+- `03`: standard adaptation, then gentle Swin/PANNS late-layer fine-tuning.
+- `04`: longer, higher-mask adaptation, then slower fine-tuning; use this only
+  when GPU memory supports the smaller configured batches.
+
 ## Outputs
 
 The default run writes these files under

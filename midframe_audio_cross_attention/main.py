@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import random
 import gc
 from pathlib import Path
@@ -22,6 +23,17 @@ from tasks.trainer import MultimodalTrainer
 CONFIG_PATH = Path(__file__).parent / "config" / "train_config.json"
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Swin iBOT spatial pretraining and multimodal fusion.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=CONFIG_PATH,
+        help="Path to a training JSON file. Defaults to config/train_config.json.",
+    )
+    return parser.parse_args()
+
+
 def resolve_device(value: str) -> torch.device:
     if value == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,7 +46,8 @@ def paired_loader_workers() -> int:
 
 
 def main() -> None:
-    config = RunConfig.from_json(CONFIG_PATH)
+    args = parse_args()
+    config = RunConfig.from_json(args.config)
     random.seed(config.training.seed)
     np.random.seed(config.training.seed)
     torch.manual_seed(config.training.seed)
