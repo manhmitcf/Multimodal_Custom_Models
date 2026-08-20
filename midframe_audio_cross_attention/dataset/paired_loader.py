@@ -99,3 +99,46 @@ def paired_collate(batch: list[dict[str, Any]]) -> dict[str, Any]:
         "audio_path": [item["audio_path"] for item in batch],
         "video_path": [item["video_path"] for item in batch],
     }
+
+
+class SourceUnlabeledVideoDataset(Dataset[dict[str, Any]]):
+    """Centre frames from immutable training rows for label-free iBOT adaptation.
+
+    The label column remains in the source CSV only because the baseline loader
+    requires it to decode a row; it is never returned or consumed here.
+    """
+
+    def __init__(self, config: RunConfig) -> None:
+        self.records = read_immutable_split(config.data.split_dir, "train")
+        video_reference = load_video_reference(config.references.video_repo)
+        video_module = video_reference.video_loader_module
+        video_parent = _source_parent(
+            video_reference.FishVideoDataLoader,
+            self.records,
+            "train",
+            batch_size=config.ibot_pretraining.batch_size,
+            dataloader_workers=config.data.num_workers,
+            prefetch_factor=None,
+            cache_mode=config.data.video_cache_mode,
+            image_size=config.data.image_size,
+            image_cache_root=video_module.DEFAULT_IMAGE_CACHE_ROOT,
+            image_cache_dir=video_module._resolve_image_cache_dir(None, config.data.image_size),
+        )
+        self.video_dataset = video_reference.FishVideoDataLoader._InnerDataset(video_parent, "train")
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def __getitem__(self, index: int) -> dict[str, Any]:
+        video_sample = self.video_dataset[index]
+        _, video_path, _ = self.records[index]
+        if video_sample["video_name"] != video_path:
+            raise RuntimeError(f"baseline video path mismatch at index {index}")
+        return {"image": video_sample["video_form"], "video_path": video_path}
+
+
+def unlabeled_video_collate(batch: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "image": torch.stack([item["image"] for item in batch]),
+        "video_path": [item["video_path"] for item in batch],
+    }

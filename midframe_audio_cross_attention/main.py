@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import random
+import gc
 from pathlib import Path
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from dataset.paired_loader import SourcePairedDataset, paired_collate
-from models.fusion_model import BaselineSourceMultimodal
+from dataset.paired_loader import SourcePairedDataset, SourceUnlabeledVideoDataset, paired_collate, unlabeled_video_collate
+from models.fusion_model import SwinSpatialMultimodal
+from models.ibot_pretraining import SwinIbotPretrainer
 from models.source_encoders import build_source_encoders
 from settings import RunConfig
+from tasks.ibot_trainer import IbotTrainer
 from tasks.trainer import MultimodalTrainer
 
 
@@ -37,7 +40,31 @@ def main() -> None:
     torch.manual_seed(config.training.seed)
     device = resolve_device(config.training.device)
     audio_encoder, video_encoder = build_source_encoders(config)
-    model = BaselineSourceMultimodal(
+    if config.ibot_pretraining.enabled:
+        unlabeled_loader = DataLoader(
+            SourceUnlabeledVideoDataset(config),
+            batch_size=config.ibot_pretraining.batch_size,
+            shuffle=True,
+            num_workers=paired_loader_workers(),
+            pin_memory=torch.cuda.is_available(),
+            collate_fn=unlabeled_video_collate,
+        )
+        ibot_pretrainer = SwinIbotPretrainer(video_encoder, config.ibot_pretraining).to(device)
+        ibot_trainer = IbotTrainer(
+            ibot_pretrainer,
+            unlabeled_loader,
+            device,
+            config.ibot_pretraining.output_dir,
+        )
+        ibot_trainer.fit(config.ibot_pretraining.epochs)
+        video_encoder = ibot_pretrainer.student_encoder
+        del ibot_trainer
+        del ibot_pretrainer
+        del unlabeled_loader
+        gc.collect()
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+    model = SwinSpatialMultimodal(
         audio_encoder,
         video_encoder,
         d_model=config.model.d_model,

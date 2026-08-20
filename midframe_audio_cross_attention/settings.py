@@ -64,6 +64,39 @@ class TrainingConfig:
 
 
 @dataclass(frozen=True)
+class IbotPretrainingConfig:
+    """Configuration for label-free Swin spatial adaptation on train frames."""
+
+    enabled: bool
+    epochs: int
+    batch_size: int
+    learning_rate: float
+    weight_decay: float
+    ema_momentum: float
+    mask_ratio: float
+    num_prototypes: int
+    student_temperature: float
+    teacher_temperature: float
+    output_dir: Path
+
+    def validate(self, video_backbone: str) -> None:
+        if self.enabled and video_backbone != "swin_tiny":
+            raise ValueError("iBOT-inspired pretraining currently supports only the SwinTiny backbone.")
+        if self.epochs <= 0 or self.batch_size <= 0:
+            raise ValueError("ibot_pretraining.epochs and ibot_pretraining.batch_size must be positive.")
+        if self.learning_rate <= 0 or self.weight_decay < 0:
+            raise ValueError("ibot_pretraining.learning_rate must be positive and weight_decay non-negative.")
+        if not 0.0 < self.ema_momentum < 1.0:
+            raise ValueError("ibot_pretraining.ema_momentum must be between 0 and 1.")
+        if not 0.0 < self.mask_ratio < 1.0:
+            raise ValueError("ibot_pretraining.mask_ratio must be between 0 and 1.")
+        if self.num_prototypes <= 1:
+            raise ValueError("ibot_pretraining.num_prototypes must be greater than 1.")
+        if self.student_temperature <= 0 or self.teacher_temperature <= 0:
+            raise ValueError("iBOT temperatures must be positive.")
+
+
+@dataclass(frozen=True)
 class RunConfig:
     references: ReferenceConfig
     audio_checkpoint: Path
@@ -71,6 +104,7 @@ class RunConfig:
     data: DataConfig
     model: ModelConfig
     training: TrainingConfig
+    ibot_pretraining: IbotPretrainingConfig
 
     @classmethod
     def from_json(cls, path: Path | str) -> "RunConfig":
@@ -104,6 +138,11 @@ class RunConfig:
         )
         training_raw: dict[str, Any] = {**raw["training"], "output_dir": resolve(raw["training"]["output_dir"])}
         training = TrainingConfig(**training_raw)
+        ibot_raw: dict[str, Any] = {
+            **raw["ibot_pretraining"],
+            "output_dir": resolve(raw["ibot_pretraining"]["output_dir"]),
+        }
+        ibot_pretraining = IbotPretrainingConfig(**ibot_raw)
         config = cls(
             references=references,
             audio_checkpoint=resolve(checkpoints["audio"]),
@@ -111,6 +150,7 @@ class RunConfig:
             data=data,
             model=model,
             training=training,
+            ibot_pretraining=ibot_pretraining,
         )
         config.validate()
         return config
@@ -126,6 +166,7 @@ class RunConfig:
             raise ValueError("data.num_workers must be -1 or a non-negative integer")
         if self.model.d_model <= 0 or self.model.d_model % self.model.num_heads:
             raise ValueError("model.d_model must be positive and divisible by model.num_heads")
+        self.ibot_pretraining.validate(self.model.video_backbone)
         for path, description in (
             (self.references.audio_repo, "audio source repo"),
             (self.references.video_repo, "video source repo"),

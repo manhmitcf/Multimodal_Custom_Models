@@ -34,6 +34,19 @@
     "weight_decay": 0.0001,
     "seed": 42,
     "device": "auto",
-    "output_dir": "../runs/swin_tiny_frozen_cross_attn"
+    "output_dir": "../runs/swin_tiny_ibot_stage3_cross_attn"
+  },
+  "ibot_pretraining": {
+    "enabled": true,
+    "epochs": 50,
+    "batch_size": 32,
+    "learning_rate": 0.00005,
+    "weight_decay": 0.04,
+    "ema_momentum": 0.996,
+    "mask_ratio": 0.4,
+    "num_prototypes": 2048,
+    "student_temperature": 0.1,
+    "teacher_temperature": 0.07,
+    "output_dir": "../runs/swin_tiny_ibot_stage3_cross_attn/ibot_pretraining"
   }
 }

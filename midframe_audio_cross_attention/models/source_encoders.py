@@ -84,7 +84,73 @@ class SourceVideoFeatureEncoder(nn.Module):
         return captured[0]
 
 
-def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, SourceVideoFeatureEncoder]:
+class SourceSwinSpatialEncoder(nn.Module):
+    """Expose SwinTiny stage-3 tokens while retaining source checkpoint weights.
+
+    Torchvision SwinTiny uses channels-last feature maps.  At 224x224,
+    stage 3 is a 14x14 grid with 384 channels; this is the representation
+    used both by iBOT-inspired pretraining and spatial multimodal fusion.
+    """
+
+    stage3_feature_index = 5
+    stage3_grid_size = 14
+    stage3_feature_dim = 384
+    input_grid_size = 56
+    input_feature_dim = 96
+
+    def __init__(self, model: nn.Module) -> None:
+        super().__init__()
+        self.model = model
+        self.name = "swin_tiny"
+        self.feature_dim = self.stage3_feature_dim
+        self.num_tokens = self.stage3_grid_size * self.stage3_grid_size
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, 1, self.input_feature_dim))
+        nn.init.trunc_normal_(self.mask_token, std=0.02)
+
+    @property
+    def network(self) -> nn.Module:
+        return self.model.backbone.model
+
+    def _expand_stage3_mask(self, stage3_mask: Tensor) -> Tensor:
+        if stage3_mask.shape != (stage3_mask.shape[0], self.num_tokens):
+            raise ValueError(
+                f"stage-3 mask must have shape [batch, {self.num_tokens}], got {tuple(stage3_mask.shape)}"
+            )
+        grid = stage3_mask.reshape(-1, self.stage3_grid_size, self.stage3_grid_size)
+        return grid.repeat_interleave(4, dim=1).repeat_interleave(4, dim=2)
+
+    def forward_features(self, images: Tensor, stage3_mask: Tensor | None = None) -> tuple[Tensor, Tensor]:
+        features = self.network.features
+        x = features[0](images)
+        if x.ndim != 4 or x.shape[-1] != self.input_feature_dim:
+            raise RuntimeError(f"Unexpected Swin input feature shape: {tuple(x.shape)}")
+        if stage3_mask is not None:
+            expanded_mask = self._expand_stage3_mask(stage3_mask).unsqueeze(-1)
+            if expanded_mask.shape[:3] != x.shape[:3]:
+                raise RuntimeError(f"Swin mask shape {tuple(expanded_mask.shape)} does not match features {tuple(x.shape)}")
+            x = torch.where(expanded_mask, self.mask_token.to(dtype=x.dtype), x)
+        stage3 = None
+        for index in range(1, len(features)):
+            x = features[index](x)
+            if index == self.stage3_feature_index:
+                stage3 = x
+        if stage3 is None or stage3.shape[1:] != (
+            self.stage3_grid_size,
+            self.stage3_grid_size,
+            self.stage3_feature_dim,
+        ):
+            actual = None if stage3 is None else tuple(stage3.shape)
+            raise RuntimeError(f"Unexpected Swin stage-3 feature shape: {actual}")
+        stage4 = self.network.norm(x)
+        global_feature = stage4.mean(dim=(1, 2))
+        return stage3, global_feature
+
+    def forward(self, images: Tensor) -> Tensor:
+        stage3, _ = self.forward_features(images)
+        return stage3.reshape(stage3.shape[0], self.num_tokens, self.feature_dim).contiguous()
+
+
+def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, SourceSwinSpatialEncoder]:
     """Instantiate and strict-load only the original source model classes."""
     audio_reference = load_audio_reference(config.references.audio_repo)
     frontend_config = audio_reference.AudioFeaturesConfig(
@@ -106,7 +172,9 @@ def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, S
     _load_strict(audio_model, config.audio_checkpoint)
 
     video_reference = load_video_reference(config.references.video_repo)
+    if config.model.video_backbone != "swin_tiny":
+        raise ValueError("The Swin iBOT spatial pipeline requires model.video_backbone='swin_tiny'.")
     backbone = video_reference.video_backbones[config.model.video_backbone](classes_num=4, pretrained=False)
     video_model = video_reference.VideoModel(backbone=backbone)
     _load_strict(video_model, config.video_checkpoint)
-    return SourceAudioTokenEncoder(audio_model), SourceVideoFeatureEncoder(video_model, config.model.video_backbone)
+    return SourceAudioTokenEncoder(audio_model), SourceSwinSpatialEncoder(video_model)
