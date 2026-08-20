@@ -20,6 +20,7 @@ if str(PROJECT_DIR) not in sys.path:
 from models.ibot_pretraining import make_block_mask, masked_token_cross_entropy
 from models.fusion_model import SpatialCrossAttentionHead
 from settings import IbotPretrainingConfig
+from utils.huggingface_results import result_path_in_repo
 
 
 def test_block_mask_marks_the_requested_number_of_stage3_tokens() -> None:
@@ -90,3 +91,15 @@ def test_spatial_fusion_classifies_each_visual_token_set() -> None:
 
     assert logits.shape == (3, 4)
     assert attention.shape == (3, 2, 4, 6)
+
+
+def test_result_upload_path_keeps_runs_and_timestamps_separate() -> None:
+    """Would fail if separate Marimo runs overwrite a previously uploaded CSV."""
+    destination = result_path_in_repo(
+        path_prefix="swin_tiny_ibot_spatial",
+        run_name="02_frozen_standard",
+        timestamp="20260821_153012",
+        filename="test_confusion_matrix.csv",
+    )
+
+    assert destination == "swin_tiny_ibot_spatial/02_frozen_standard/20260821_153012/test_confusion_matrix.csv"

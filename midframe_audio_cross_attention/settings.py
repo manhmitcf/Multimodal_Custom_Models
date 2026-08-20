@@ -97,6 +97,27 @@ class IbotPretrainingConfig:
 
 
 @dataclass(frozen=True)
+class ResultsUploadConfig:
+    """Hugging Face Dataset destination for the two final confusion-matrix CSVs."""
+
+    enabled: bool
+    repo_id: str
+    repo_type: str
+    path_prefix: str
+    create_repo: bool
+
+    def validate(self) -> None:
+        if not self.enabled:
+            return
+        if not self.repo_id or "/" not in self.repo_id:
+            raise ValueError("results_upload.repo_id must be a Hugging Face repo ID such as 'user/repo'.")
+        if self.repo_type != "dataset":
+            raise ValueError("results_upload.repo_type must be 'dataset' for CSV result uploads.")
+        if not self.path_prefix.strip("/"):
+            raise ValueError("results_upload.path_prefix must not be empty.")
+
+
+@dataclass(frozen=True)
 class RunConfig:
     references: ReferenceConfig
     audio_checkpoint: Path
@@ -105,6 +126,7 @@ class RunConfig:
     model: ModelConfig
     training: TrainingConfig
     ibot_pretraining: IbotPretrainingConfig
+    results_upload: ResultsUploadConfig
 
     @classmethod
     def from_json(cls, path: Path | str) -> "RunConfig":
@@ -143,6 +165,7 @@ class RunConfig:
             "output_dir": resolve(raw["ibot_pretraining"]["output_dir"]),
         }
         ibot_pretraining = IbotPretrainingConfig(**ibot_raw)
+        results_upload = ResultsUploadConfig(**raw["results_upload"])
         config = cls(
             references=references,
             audio_checkpoint=resolve(checkpoints["audio"]),
@@ -151,6 +174,7 @@ class RunConfig:
             model=model,
             training=training,
             ibot_pretraining=ibot_pretraining,
+            results_upload=results_upload,
         )
         config.validate()
         return config
@@ -167,6 +191,7 @@ class RunConfig:
         if self.model.d_model <= 0 or self.model.d_model % self.model.num_heads:
             raise ValueError("model.d_model must be positive and divisible by model.num_heads")
         self.ibot_pretraining.validate(self.model.video_backbone)
+        self.results_upload.validate()
         for path, description in (
             (self.references.audio_repo, "audio source repo"),
             (self.references.video_repo, "video source repo"),

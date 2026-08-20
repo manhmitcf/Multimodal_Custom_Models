@@ -48,5 +48,12 @@
     "student_temperature": 0.1,
     "teacher_temperature": 0.07,
     "output_dir": "../runs/01_frozen_light/ibot_pretraining"
+  },
+  "results_upload": {
+    "enabled": true,
+    "repo_id": "manhmitcf/fish_result",
+    "repo_type": "dataset",
+    "path_prefix": "swin_tiny_ibot_spatial",
+    "create_repo": true
   }
 }

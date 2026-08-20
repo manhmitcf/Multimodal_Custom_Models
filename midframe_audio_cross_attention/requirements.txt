@@ -11,3 +11,4 @@ pydantic
 pillow
 tqdm
 decord
+huggingface_hub

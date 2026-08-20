@@ -146,3 +146,21 @@ test_confusion_matrix.csv
 
 Keep the iBOT checkpoint, final metrics, JSON config, commit hash, seed, and
 batch sizes together when reporting the experiment.
+
+## Upload CSV results to Hugging Face
+
+All supplied JSON files upload the final validation and holdout confusion
+matrix CSVs to the Hugging Face Dataset `manhmitcf/fish_result` after training
+has completed successfully. The upload path includes the run name and a
+timestamp, so previous runs are not overwritten.
+
+Authenticate once on Marimo before starting a run. Do not put a token in a
+JSON file, source file, notebook, or Git commit:
+
+```bash
+hf auth login
+```
+
+Alternatively set `HF_TOKEN` only in the Marimo shell/session. If
+authentication or upload fails, the training result remains safely in the
+local run directory and the script logs a warning instead of failing the run.
