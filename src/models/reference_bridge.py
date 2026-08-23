@@ -19,7 +19,21 @@ def _legacy_import_context(repository_root: Path) -> Iterator[None]:
     """Temporarily reserve legacy absolute names for one read-only source repo."""
     repository_root = Path(repository_root).resolve()
     if not repository_root.is_dir():
-        raise FileNotFoundError(f"Baseline repository not found: {repository_root}")
+        candidates = [
+            repository_root,
+            Path.cwd() / repository_root.name,
+            Path.cwd().parent / repository_root.name,
+            Path(__file__).resolve().parent.parent / repository_root.name,
+            Path(__file__).resolve().parent.parent.parent / repository_root.name,
+        ]
+        found = False
+        for candidate in candidates:
+            if candidate.is_dir():
+                repository_root = candidate.resolve()
+                found = True
+                break
+        if not found:
+            raise FileNotFoundError(f"Baseline repository not found: {repository_root}")
 
     previous_modules = {
         name: module

@@ -1,7 +1,7 @@
 {
   "references": {
-    "audio_repo": "../../U_FFIA27K_audio",
-    "video_repo": "../../U_FFIA27K_video"
+    "audio_repo": "../U_FFIA27K_audio",
+    "video_repo": "../U_FFIA27K_video"
   },
   "checkpoints": {
     "audio": "../../checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/audio_best.pt"
