@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "source_dir": "checkpoint",
+  "zip_path": "checkpoint/gw_avf_multimodal_results.zip",
+  "repo_id": "manhmitcf/fish_result",
+  "repo_type": "dataset",
+  "path_in_repo": "gw_avf_multimodal_results.zip",
+  "create_repo": true
+}

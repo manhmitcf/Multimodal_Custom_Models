@@ -1,9 +1,11 @@
-"""The only changed architecture: multimodal fusion over source-baseline encoders."""
+"""Multimodal fusion architectures: baseline, spatial, and Method 3 Geometry Water-Ripple Cross-Attention."""
 
 from __future__ import annotations
 
 import torch
 from torch import Tensor, nn
+
+from features.geometry_ripple_features import GeometryRippleFeatureExtractor
 
 
 class CrossAttentionHead(nn.Module):
@@ -126,6 +128,104 @@ class SpatialCrossAttentionHead(nn.Module):
         fused = self.cross_norm(visual + attended)
         fused = self.ffn_norm(fused + self.ffn(fused))
         return self.classifier(fused.mean(dim=1)), attention
+
+
+class GeometryRippleCrossAttentionHead(nn.Module):
+    """Method 3 (GW-AVF): Classify geometry & water-ripple enriched spatial tokens
+
+    cross-attending with contextual audio tokens.
+    """
+
+    def __init__(self, audio_dim: int, video_dim: int, d_model: int, num_heads: int, dropout: float = 0.1) -> None:
+        super().__init__()
+        self.geometry_ripple_enhancer = GeometryRippleFeatureExtractor(visual_dim=video_dim, d_model=d_model, dropout=dropout)
+
+        self.audio_projection = nn.Linear(audio_dim, d_model)
+        self.audio_positions = nn.Parameter(Tensor(1, 6, d_model).normal_(mean=0.0, std=0.02))
+        self.audio_self_attention = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=num_heads,
+            dim_feedforward=d_model * 4,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+        )
+        self.cross_attention = nn.MultiheadAttention(d_model, num_heads, dropout=dropout, batch_first=True)
+        self.cross_norm = nn.LayerNorm(d_model)
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, d_model * 4),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model * 4, d_model),
+        )
+        self.ffn_norm = nn.LayerNorm(d_model)
+        self.classifier = nn.Linear(d_model, 4)
+
+    def forward(self, audio_tokens: Tensor, visual_tokens: Tensor, images: Tensor) -> tuple[Tensor, Tensor]:
+        if audio_tokens.ndim != 3 or audio_tokens.shape[1] != 6:
+            raise ValueError("audio tokens must have shape [batch, 6, channels]")
+        if visual_tokens.ndim != 3:
+            raise ValueError("visual tokens must have shape [batch, 196, channels]")
+
+        # Enhance visual spatial tokens with water ripple and geometry features
+        enhanced_visual = self.geometry_ripple_enhancer(visual_tokens, images)  # [batch, 196, d_model]
+
+        audio = self.audio_self_attention(self.audio_projection(audio_tokens) + self.audio_positions)  # [batch, 6, d_model]
+        attended, attention = self.cross_attention(enhanced_visual, audio, audio, need_weights=True, average_attn_weights=False)
+
+        fused = self.cross_norm(enhanced_visual + attended)
+        fused = self.ffn_norm(fused + self.ffn(fused))
+        logits = self.classifier(fused.mean(dim=1))
+        return logits, attention
+
+
+class GeometryRippleMultimodalModel(nn.Module):
+    """Method 3 (GW-AVF): Multimodal model combining Audio, Visual Spatial Tokens, and Geometry/Ripple Features."""
+
+    def __init__(self, audio_encoder: nn.Module, video_encoder: nn.Module, d_model: int, num_heads: int, encoder_mode: str, dropout: float) -> None:
+        super().__init__()
+        if encoder_mode not in {"frozen", "tune"}:
+            raise ValueError("encoder_mode must be frozen or tune")
+        self.audio_encoder = audio_encoder
+        self.video_encoder = video_encoder
+        self.encoder_mode = encoder_mode
+        self.fusion = GeometryRippleCrossAttentionHead(audio_encoder.feature_dim, video_encoder.feature_dim, d_model, num_heads, dropout)
+        self.configure_encoder_mode()
+
+    def _open_prefixes(self) -> tuple[str, ...]:
+        return (
+            "audio_encoder.model.backbone.conv_block4",
+            "audio_encoder.model.backbone.fc1",
+            "video_encoder.model.backbone.model.features.5",
+            "video_encoder.model.backbone.model.features.6",
+            "video_encoder.model.backbone.model.features.7",
+            "video_encoder.model.backbone.model.norm",
+        )
+
+    def configure_encoder_mode(self) -> None:
+        for encoder in (self.audio_encoder, self.video_encoder):
+            for parameter in encoder.parameters():
+                parameter.requires_grad = False
+        if self.encoder_mode == "tune":
+            for name, parameter in self.named_parameters():
+                if any(name.startswith(prefix) for prefix in self._open_prefixes()):
+                    parameter.requires_grad = True
+
+    def train(self, mode: bool = True) -> "GeometryRippleMultimodalModel":
+        super().train(mode)
+        if mode:
+            self.audio_encoder.eval()
+            self.video_encoder.eval()
+            if self.encoder_mode == "tune":
+                for prefix in self._open_prefixes():
+                    self.get_submodule(prefix).train()
+        return self
+
+    def forward(self, waveforms: Tensor, images: Tensor, return_attention: bool = False) -> Tensor | tuple[Tensor, Tensor]:
+        audio_tokens = self.audio_encoder(waveforms)
+        visual_tokens = self.video_encoder(images)
+        logits, attention = self.fusion(audio_tokens, visual_tokens, images)
+        return (logits, attention) if return_attention else logits
 
 
 class SwinSpatialMultimodal(nn.Module):
