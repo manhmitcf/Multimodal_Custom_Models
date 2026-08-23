@@ -2,6 +2,8 @@
 
 Biển hướng dẫn này dành cho **Nhánh `exp/geometry-water-ripple-cross-attn`**, triển khai **Phương pháp 3 (GW-AVF)**: Tự động trích xuất đặc trưng **Sóng nước (Water Ripples)** & **Mật độ hình học đàn cá (Delaunay Flocking Geometry)** trên lưới $14 \times 14$ không gian, dung hợp với $6$ audio tokens thông qua Cross-Attention, và tự động nén/upload kết quả đầy đủ lên **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.
 
+> 📖 **Hướng dẫn chi tiết từng tham số cấu hình JSON**: Xem tài liệu [`CONFIG_GUIDE.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/midframe_audio_cross_attention/CONFIG_GUIDE.md).
+
 ---
 
 ## 1. Clone nhánh thí nghiệm này
@@ -127,3 +129,10 @@ checkpoint/
 ```
 
 Cuối quá trình chạy, toàn bộ thư mục này sẽ được tự động đóng gói thành file `.zip` và tải lên repository **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.
+
+---
+
+## ⚙️ Hướng dẫn Cấu hình Siêu tham số (Configuration)
+
+Chi tiết ý nghĩa từng thông số và cách chỉnh sửa file [`config/train_config.json`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/midframe_audio_cross_attention/config/train_config.json) vui lòng xem tại file:
+👉 **[`CONFIG_GUIDE.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/midframe_audio_cross_attention/CONFIG_GUIDE.md)**
