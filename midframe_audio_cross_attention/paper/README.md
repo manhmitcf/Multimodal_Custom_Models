@@ -1,24 +1,24 @@
-# Tài liệu Chuyên sâu cho Phương pháp 3 (GW-AVF)
+# Tài liệu Chuyên sâu cho Phương pháp 4 (R-BPMD)
 
-Thư mục này chứa các bài báo khoa học tiền đề làm cơ sở thiết kế cho **Phương pháp 3: Geometry & Water-Ripple Guided Audio-Visual Fusion (GW-AVF)**.
+Thư mục này chứa các bài báo khoa học tiền đề làm cơ sở thiết kế cho **Phương pháp 4: Robust Bilinear Pooling with Modality Dropout (R-BPMD)**.
 
 ---
 
 ## 📑 Danh sách Bài báo Tham chiếu Chính
 
-### 1. `2506.14170.pdf`
-* **Tên bài báo**: *Progressive Multimodal Interaction Network for Reliable Quantification of Fish Feeding Intensity in Aquaculture*
-* **Tác giả / Năm**: arXiv:2506.14170 (2025)
-* **Ý nghĩa áp dụng**: Cung cấp bằng chứng thực nghiệm về việc dung hợp tín hiệu ảnh, âm thanh và sóng nước (water-wave) giúp tăng độ tin cậy khi định lượng cường độ cho cá ăn.
+### 1. `2111.08910.pdf`
+* **Tên bài báo**: *Information Fusion in Attention Networks Using Adaptive and Multi-level Factorized Bilinear Pooling for Audio-visual Emotion Recognition*
+* **Tác giả / Năm**: IEEE / arXiv:2111.08910 (2021)
+* **Ý nghĩa áp dụng**: Cung cấp thuật toán Multi-level Factorized Bilinear Pooling (MFB) để tính toán tương tác ma sát kép phi tuyến giữa các đặc trưng Audio và Visual thay cho phép ghép nối (concatenation) đơn thuần.
 
-### 2. `2208.07011.pdf`
-* **Tên bài báo**: *Automatic Controlling Fish Feeding Machine using Feature Extraction of Nutriment and Ripple Behavior*
-* **Tác giả / Năm**: IEEE / arXiv:2208.07011 (2022)
-* **Ý nghĩa áp dụng**: Cung cấp thuật toán trích xuất đặc trưng gợn sóng nước (Ripple Behavior Feature Extraction) và chuyển động bơi tán loạn để ra quyết định điều khiển máy cho cá ăn.
+### 2. `2010.00734.pdf`
+* **Tên bài báo**: *Training Strategies to Handle Missing Modalities for Audio-Visual Expression Recognition*
+* **Tác giả / Năm**: arXiv:2010.00734 (2020)
+* **Ý nghĩa áp dụng**: Cung cấp chiến lược huấn luyện chịu lỗi (Modality Dropout) bằng cách loại bỏ ngẫu nhiên 1 trong 2 kênh tín hiệu khi train, giúp mô hình duy trì độ chính xác cao ngay cả khi cảm biến/ống kính camera bị lóa hoặc âm thanh bị nhiễu.
 
 ---
 
-## 🏗️ Ứng dụng vào Mã nguồn `features/geometry_ripple_features.py`
+## 🏗️ Ứng dụng vào Mã nguồn `features/robust_bilinear_fusion.py`
 
-* **Wavelet Water-Ripple Energy**: Dựa trên `2208.07011.pdf`, module `RippleWaveletExtractor` trích xuất thành phần tần số cao đại diện cho gợn sóng nhấp nhô trên mặt hồ.
-* **Progressive Geometry Fusion**: Dựa trên `2506.14170.pdf`, module `GeometryRippleFeatureExtractor` dung hợp lưới không gian $14 \times 14$ đặc trưng hình học vào các visual spatial tokens trước khi đi qua Cross-Attention.
+* **Factorized Bilinear Pooling (MFB)**: Dựa trên `2111.08910.pdf`, module `MultiFactorizedBilinearPooling` thực hiện tính tích Hadamard phần tử và sum-pooling theo factor $k=3$.
+* **Modality Dropout**: Dựa trên `2010.00734.pdf`, module `ModalityDropout` loại bỏ ngẫu nhiên $15\%$ tín hiệu Audio hoặc Visual trong quá trình huấn luyện.
