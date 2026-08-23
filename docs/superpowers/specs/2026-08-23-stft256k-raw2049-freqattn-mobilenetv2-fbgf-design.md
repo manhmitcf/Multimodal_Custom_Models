@@ -114,7 +114,7 @@ Tất cả mã nguồn nằm gọn trong `src/`:
 - `src/settings.py`: Bộ đọc cấu hình & phân giải đường dẫn.
 - `src/config/train_config.json`: Cấu hình chứa các siêu tham số `stft` (`sr: 256000`, `pre_emphasis: 0.97`, `frame_length: 4096`, `hop_length: 2048`, `n_fft: 4096`, `windowing: "hamming"`, `use_std: true`) và cờ `"fusion_type": "fbgf"`.
 - `src/config/artifact_upload_config.json`: Cấu hình nén zip tự động lên Hugging Face repository `manhmitcf/fish_result`.
-- `src/dataset/paired_loader.py`: Dataloader hỗ trợ RAM cache với `cache_audio: true`, `video_cache_mode: "ram"`, kết hợp `pin_memory=True` và `persistent_workers=True` giữ nguyên tiến trình worker qua các epoch để tối ưu tốc độ nạp GPU tối đa.
+- `src/dataset/paired_loader.py`: Dataloader hỗ trợ RAM cache với `cache_audio: true`, `video_cache_mode: "ram"`, tự động tính `num_workers = (os.cpu_count() // 2) + 1` khi cấu hình `"num_workers": -1`, kết hợp `pin_memory=True` và `persistent_workers=True` giữ nguyên tiến trình worker qua các epoch để tối ưu tốc độ nạp GPU tối đa.
 - `src/features/audio_features.py`: Pre-Emphasis, Raw STFT 2049, FrequencyDomainAttention.
 - `src/models/custom_audio_cnn.py`: Depthwise-Separable Audio CNN.
 - `src/models/fusion_model.py`: Mô hình Đa thức & Fusion Head.
