@@ -135,6 +135,20 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
                 self.video_cache[idx] = self._load_video(rec["video_path"])
 
     def _load_audio(self, rel_path: str) -> Tensor:
+        sample_id = Path(rel_path).stem
+        npy_candidates = [
+            Path("stft256k_features_npy") / f"{sample_id}.npy",
+            Path("/marimo/Multimodal_Custom_Models/src/stft256k_features_npy") / f"{sample_id}.npy",
+            Path.cwd() / "stft256k_features_npy" / f"{sample_id}.npy",
+        ]
+        for npy_file in npy_candidates:
+            if npy_file.exists():
+                try:
+                    spec_np = np.load(str(npy_file)) # [2049, 250]
+                    return torch.from_numpy(spec_np).unsqueeze(0).to(dtype=torch.float32)
+                except Exception:
+                    pass
+
         audio_file = resolve_dataset_file(self.dataset_base_dir, rel_path)
         try:
             waveform, sr = torchaudio.load(str(audio_file))

@@ -69,9 +69,14 @@ class CustomRawStftAudioCNN(nn.Module):
         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc_proj = nn.Linear(256, feature_dim)
 
-    def forward(self, waveforms: Tensor) -> Tensor:
-        # 1. Compute Raw STFT Spectrogram [B, 1, 2049, 250]
-        db_spec = self.stft_transform(waveforms)
+    def forward(self, input_tensor: Tensor) -> Tensor:
+        # Check if input is 2D Waveform [B, Time] or 4D Spectrogram Tensor [B, 1, 2049, Time]
+        if input_tensor.ndim == 2:
+            db_spec = self.stft_transform(input_tensor)
+        elif input_tensor.ndim == 3:
+            db_spec = input_tensor.unsqueeze(1)
+        else:
+            db_spec = input_tensor
 
         # 2. Apply Frequency-Domain Attention (F-Attn)
         attended_spec = self.freq_attention(db_spec)
