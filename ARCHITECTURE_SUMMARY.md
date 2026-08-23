@@ -1,8 +1,7 @@
-# 🏗️ BÁO CÁO KIẾN TRÚC MÔ HÌNH MULTIMODAL STFT 256K + MOBILENETV2 + FBGF
-*(Đạt mốc kỷ lục Validation Accuracy: 95.34%)*
+# 🏗️ BÁO CÁO KIẾN TRÚC MÔ HÌNH MULTIMODAL STFT 256K + EFFICIENTNETB0 + FBGF
 
-**Nhánh Git**: `exp/stft256k-raw2049-freqattn-mobilenetv2-fbgf`  
-**Commit vô địch**: `c030195` / `86107e7`  
+**Nhánh Git**: `exp/stft256k-raw2049-freqattn-efficientnetb0-fbgf`  
+**Video Backbone Checkpoint**: `EfficientNetB0_holdout_random_sample_20260804_181745`  
 **Ngày cập nhật**: 24/08/2026  
 
 ---
@@ -11,7 +10,7 @@
 
 Mô hình Multimodal kết hợp 2 luồng tín hiệu sinh học cá đớp mồi:
 1. **Audio Path**: Sóng âm siêu phân giải $256\text{kHz} \rightarrow$ Bộ lọc Pre-emphasis ($\alpha=0.97$) $\rightarrow$ Raw STFT 2049 Bins $\rightarrow$ Pure Frequency-Domain Attention $\rightarrow$ Depthwise-Separable Audio CNN $\rightarrow$ Vector $256\text{-dim}$.
-2. **Video Path**: Khung hình RGB trung tâm $224 \times 224 \rightarrow$ Frozen MobileNetV2 ($92.4\%$ baseline anchor, ghim chặt `eval()` mode) $\rightarrow$ Vector $1280\text{-dim}$.
+2. **Video Path**: Khung hình RGB trung tâm $224 \times 224 \rightarrow$ Frozen **EfficientNetB0** (ghim chặt `eval()` mode) $\rightarrow$ Vector $1280\text{-dim}$.
 
 Hai luồng đặc trưng được hòa trộn bằng **Factorized Bilinear Gated Fusion (FBGF $k=3$)**.
 
@@ -26,9 +25,9 @@ graph TD
         A6 --> AudFeat["Audio Feature Vector (256d)"]
     end
 
-    subgraph VideoPipeline ["Kênh Thị giác (Video Pipeline - MobileNetV2)"]
+    subgraph VideoPipeline ["Kênh Thị giác (Video Pipeline - EfficientNetB0)"]
         V1["Video Clip .mp4"] --> V2["Center RGB Frame Decoder (224x224)"]
-        V2 --> V3["Frozen MobileNetV2 (eval mode)"]
+        V2 --> V3["Frozen EfficientNetB0 (eval mode)"]
         V3 --> VidFeat["Video Feature Vector (1280d)"]
     end
 
@@ -86,14 +85,14 @@ graph TD
 
 ---
 
-## 🎥 3. CHI TIẾT KÊNH THỊ GIÁC (VIDEO PIPELINE)
+## 🎥 3. CHI TIẾT KÊNH THỊ GIÁC (VIDEO PIPELINE - EFFICIENTNETB0)
 
 * **Trích xuất Khung hình Trung tâm (Center Frame Decoder)**: Giải mã 1 khung hình RGB ở trung tâm clip video ($224 \times 224$).
 * **Bộ nạp RAM siêu tốc**: Giải mã nạp sẵn mảng `uint8` ($3.15\text{ GB RAM}$) đa luồng qua `ThreadPoolExecutor`.
-* **MobileNetV2 Backbone**:
-  * Nạp trọng số pre-trained $92.4\%$ baseline từ `video_best.pt`.
-  * **Bảo vệ BatchNorm (`encoder_mode: "frozen"`)**: Ghim chặt `self.video_encoder.eval()` trong quá trình huấn luyện, bảo vệ $100\%$ thống kê 52 lớp `BatchNorm2d`.
-* **Trích xuất Vector Feature**: Trích vector 1280-dim $[B, 1280]$.
+* **EfficientNetB0 Backbone**:
+  * Nạp trọng số pre-trained từ `checkpoints/EfficientNetB0_holdout_random_sample_20260804_181745/U_FFIA_video/checkpoint/efficientnet_b0/video_best.pt`.
+  * **Bảo vệ BatchNorm (`encoder_mode: "frozen"`)**: Ghim chặt `self.video_encoder.eval()` trong quá trình huấn luyện.
+* **Trích xuất Vector Feature**: Trích vector 1280-dim $[B, 1280]$ qua `network.classifier[1]`.
 
 ---
 
@@ -118,14 +117,3 @@ FBGF thực hiện dung hợp qua 5 bước toán học:
 
 5. **Đầu Phân loại**:
    $$\mathbf{Logits} = \text{Classifier}(\mathbf{f}_{\text{fused}}) \in \mathbb{R}^{B \times 4}$$
-
----
-
-## 🚀 5. BỐN NGUYÊN NHÂN CHÍNH NÂNG VAL ACCURACY LÊN 95.34%
-
-| Nguyên nhân | Cơ chế Kỹ thuật | Tác động Hiệu năng |
-| :--- | :--- | :--- |
-| **1. Learning Rate Tối ưu** | `fusion_learning_rate: 0.0001` ($10^{-4}$) | Giúp ma trận Bilinear MFB hội tụ mịn vào Cực trị Toàn cục (Global Minimum), tránh dao động như mức $10^{-3}$. |
-| **2. Bảo vệ BatchNorm** | Ghim `self.video_encoder.eval()` | Bảo vệ $100\%$ thống kê $92.4\%$ gốc của MobileNetV2, làm "Neo ổn định" cho hệ thống. |
-| **3. Raw STFT 2049 Bins** | Không nén Mel + F-Attention | Trích xuất trọn vẹn tín hiệu cá đớp mồi dải $2\text{kHz}-8\text{kHz}$ và lọc nhiễu động cơ $0-500\text{Hz}$. |
-| **4. Bilinear MFB Pooling** | Phép nhân Hadamard $\mathbf{a}_{\text{mfb}} \odot \mathbf{v}_{\text{mfb}}$ | Tương tác bậc hai mạnh mẽ giúp phân biệt chính xác các ca khó giữa mức đớp mồi Medium (2) và Strong (1). |
