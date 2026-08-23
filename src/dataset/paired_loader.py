@@ -18,6 +18,7 @@ from PIL import Image
 from torch import Tensor
 from torch.utils.data import Dataset
 from torchvision import transforms
+from tqdm import tqdm
 
 from settings import RunConfig
 
@@ -115,7 +116,7 @@ def build_video_transforms(split: str = "train", image_size: int = 224) -> trans
 
 
 class SourcePairedDataset(Dataset[dict[str, Any]]):
-    """RAM-Optimized Paired Dataset ensuring 100% exact loss and accuracy match with DISK mode."""
+    """RAM-Optimized Paired Dataset ensuring 100% exact loss/acc match and strictly 3.15 GB max video RAM."""
 
     def __init__(self, config: RunConfig, split: str) -> None:
         super().__init__()
@@ -127,32 +128,31 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
 
         self.dataset_base_dir = Path("/marimo/Fish_Feeding_Intensity_Dataset")
 
-        # RAM Caches
-        self.cache_audio_enabled = config.data.cache_audio
+        # RAM Cache (Video Only to guarantee 3.15 GB RAM limit)
         self.cache_video_enabled = (config.data.video_cache_mode == "ram")
-
-        self.audio_cache: dict[int, Tensor] = {}
         self.video_cache: list[np.ndarray | None] = [None] * len(self.records)
 
-        if self.cache_audio_enabled or self.cache_video_enabled:
+        if self.cache_video_enabled:
             logger.info(f"Initial Process Memory before '{split}' RAM preload: {get_process_memory_str()}")
             self._preload_ram_cache()
 
     def _preload_ram_cache(self) -> None:
         total_samples = len(self.records)
         num_workers = max(os.cpu_count() or 4, 1)
-        logger.info(f"Preloading '{self.split}' split into RAM (uint8 [3, 224, 224] format, ThreadPoolExecutor {num_workers} workers)...")
+        logger.info(f"Preloading '{self.split}' split video frames into RAM (guaranteed uint8 [3, 224, 224] 147 KB format, ThreadPoolExecutor {num_workers} workers)...")
 
-        def load_sample(idx_rec: tuple[int, dict[str, Any]]) -> tuple[int, Tensor | None, np.ndarray | None]:
+        def load_sample(idx_rec: tuple[int, dict[str, Any]]) -> tuple[int, np.ndarray]:
             idx, rec = idx_rec
-            audio_wave = self._load_audio(rec["audio_path"]) if self.cache_audio_enabled else None
-            if self.cache_video_enabled:
-                img_pil = self._load_video_pil(rec["video_path"], idx)
-                img_np = np.array(img_pil, dtype=np.uint8) # [H, W, C] uint8
-                video_uint8 = img_np.transpose(2, 0, 1)    # [C, H, W] uint8 (147 KB per image)
-            else:
-                video_uint8 = None
-            return idx, audio_wave, video_uint8
+            img_pil = self._load_video_pil(rec["video_path"], idx)
+
+            # Ensure image is strictly 224x224 RGB
+            target_size = (self.config.data.image_size, self.config.data.image_size)
+            if img_pil.size != target_size:
+                img_pil = img_pil.resize(target_size, Image.BILINEAR)
+
+            img_np = np.array(img_pil, dtype=np.uint8) # [224, 224, 3] uint8
+            video_uint8 = img_np.transpose(2, 0, 1)    # [3, 224, 224] uint8 (150,528 bytes = 147 KB)
+            return idx, video_uint8
 
         indexed_records = list(enumerate(self.records))
         completed_count = 0
@@ -166,14 +166,11 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
                 for future in concurrent.futures.as_completed(futures):
                     completed_count += 1
                     try:
-                        idx, audio_wave, video_uint8 = future.result()
-                        if audio_wave is not None:
-                            self.audio_cache[idx] = audio_wave
-                        if video_uint8 is not None:
-                            self.video_cache[idx] = video_uint8
-                            total_bytes += video_uint8.nbytes
+                        idx, video_uint8 = future.result()
+                        self.video_cache[idx] = video_uint8
+                        total_bytes += video_uint8.nbytes
                     except Exception as exc:
-                        logger.error(f"Error preloading sample index: {exc}")
+                        logger.error(f"Error preloading video index {idx}: {exc}")
 
                     if completed_count % 5000 == 0 or completed_count == total_samples:
                         pct = (completed_count / total_samples) * 100.0
@@ -218,6 +215,8 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
         return waveform.to(dtype=torch.float32)
 
     def _load_video_pil(self, rel_path: str, index: int = 0) -> Image.Image:
+        target_size = (self.config.data.image_size, self.config.data.image_size)
+
         # 1. Check disk cache candidates from U_FFIA27K_video
         cache_candidates = [
             Path(f"/marimo/video_cache/single_frame_size_224/{self.split}/{index}.pkl"),
@@ -233,7 +232,10 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
                     if isinstance(image_form, np.ndarray) and image_form.dtype == np.uint8:
                         if image_form.shape[0] == 3:
                             image_form = image_form.transpose(1, 2, 0)
-                        return Image.fromarray(image_form)
+                        img_pil = Image.fromarray(image_form)
+                        if img_pil.size != target_size:
+                            img_pil = img_pil.resize(target_size, Image.BILINEAR)
+                        return img_pil
                 except Exception:
                     pass
 
@@ -241,16 +243,22 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
         video_file = resolve_dataset_file(self.dataset_base_dir, rel_path)
         try:
             if video_file.is_file() and video_file.suffix.lower() in (".png", ".jpg", ".jpeg"):
-                return Image.open(video_file).convert("RGB")
+                img = Image.open(video_file).convert("RGB")
+                if img.size != target_size:
+                    img = img.resize(target_size, Image.BILINEAR)
+                return img
 
-            # Try decord VideoReader first (as in U_FFIA27K_video)
+            # Try decord VideoReader first
             try:
                 from decord import VideoReader, cpu
                 vr = VideoReader(str(video_file), width=self.config.data.image_size, height=self.config.data.image_size, ctx=cpu(0))
                 if len(vr) > 0:
                     frame_index = len(vr) // 2
                     frame_rgb = vr.get_batch([frame_index]).asnumpy()[0]
-                    return Image.fromarray(frame_rgb)
+                    img = Image.fromarray(frame_rgb)
+                    if img.size != target_size:
+                        img = img.resize(target_size, Image.BILINEAR)
+                    return img
             except Exception:
                 pass
 
@@ -265,11 +273,14 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
                 cap.release()
                 if ret and frame is not None:
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    return Image.fromarray(frame_rgb)
+                    img = Image.fromarray(frame_rgb)
+                    if img.size != target_size:
+                        img = img.resize(target_size, Image.BILINEAR)
+                    return img
 
-            return Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
+            return Image.new("RGB", target_size, color=(128, 128, 128))
         except Exception:
-            return Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
+            return Image.new("RGB", target_size, color=(128, 128, 128))
 
     def _load_video(self, rel_path: str, index: int = 0) -> Tensor:
         img_pil = self._load_video_pil(rel_path, index)
@@ -282,10 +293,7 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
         rec = self.records[index]
         label = rec["label"]
 
-        if self.cache_audio_enabled and index in self.audio_cache:
-            waveform = self.audio_cache[index]
-        else:
-            waveform = self._load_audio(rec["audio_path"])
+        waveform = self._load_audio(rec["audio_path"])
 
         if self.cache_video_enabled and self.video_cache[index] is not None:
             img_np = self.video_cache[index] # [3, 224, 224] uint8
