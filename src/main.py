@@ -75,8 +75,8 @@ def main() -> None:
         frontend=audio_ref.AudioFrontend(config=frontend_config),
         backbone=audio_ref.PANNS_Cnn6(classes_num=4),
     )
-    if config.checkpoints.audio.exists():
-        ckpt = torch.load(config.checkpoints.audio, map_location="cpu", weights_only=False)
+    if config.audio_checkpoint.exists():
+        ckpt = torch.load(config.audio_checkpoint, map_location="cpu", weights_only=False)
         audio_model.load_state_dict(ckpt["model_state_dict"], strict=True)
     audio_encoder = SourceAudioTokenEncoder(audio_model)
 
