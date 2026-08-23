@@ -13,6 +13,7 @@ if str(src_dir) not in sys.path:
 
 import torch
 
+from extract_stft_features import extract_all_stft_features
 from models.custom_audio_cnn import CustomRawStftAudioCNN
 from models.fusion_model import CustomSTFT256kMobileNetMultimodalModel
 from models.source_encoders import build_video_encoder
@@ -40,6 +41,17 @@ def main() -> None:
     torch.manual_seed(config.training.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(config.training.seed)
+
+    # Auto-extract STFT .npy features if missing
+    stft_dir = src_dir / "stft256k_features_npy"
+    if not stft_dir.exists() or len(list(stft_dir.glob("*.npy"))) < 1000:
+        logger.info("Auto-extracting STFT 2049 Bins Spectrograms to .npy files before training...")
+        extract_all_stft_features(
+            dataset_dir="/marimo/Fish_Feeding_Intensity_Dataset",
+            split_dir=str(config.data.split_dir),
+            output_dir=str(stft_dir),
+            num_workers=-1,
+        )
 
     # Build Audio CNN (Raw STFT 2049 + F-Attn + Depthwise Blocks)
     logger.info(f"Building Custom Raw STFT Audio CNN (n_fft={config.stft.n_fft}, pre_emphasis={config.stft.pre_emphasis})...")
