@@ -30,7 +30,8 @@
     "encoder_mode": "frozen",
     "d_model": 256,
     "dropout": 0.1,
-    "fusion_type": "fbgf"
+    "fusion_type": "fbgf",
+    "video_se_recalibration": true
   },
   "training": {
     "batch_size": 64,
@@ -46,7 +47,7 @@
     "enabled": true,
     "repo_id": "manhmitcf/fish_result",
     "repo_type": "dataset",
-    "path_prefix": "stft256k_raw2049_freqattn_mobilenetv2_fbgf",
+    "path_prefix": "stft256k_raw2049_freqattn_mobilenetv2_se_fbgf",
     "create_repo": true
   }
 }

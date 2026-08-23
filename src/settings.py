@@ -41,6 +41,7 @@ class ModelConfig:
     d_model: int = 256
     dropout: float = 0.1
     fusion_type: str = "fbgf"
+    video_se_recalibration: bool = True
 
 
 @dataclass(frozen=True)
@@ -131,6 +132,7 @@ class RunConfig:
             d_model=payload["model"].get("d_model", 256),
             dropout=payload["model"].get("dropout", 0.1),
             fusion_type=payload["model"].get("fusion_type", "fbgf"),
+            video_se_recalibration=payload["model"].get("video_se_recalibration", True),
         )
 
         training = TrainingConfig(

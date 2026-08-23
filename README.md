@@ -1,20 +1,29 @@
-# STFT 256k Raw 2049 Bins with Frequency-Domain Attention & MobileNetV2 Factorized Bilinear Gated Fusion
+# 🏗️ STFT 256k Raw 2049 Bins + MobileNetV2 with SE 1D Channel Recalibration & FBGF Fusion
 
-**Branch**: `exp/stft256k-raw2049-freqattn-mobilenetv2-fbgf`
+**Nhánh Git**: `exp/stft256k-raw2049-freqattn-mobilenetv2-se-fbgf`
 
-## 🌟 Quick Start Guide
+---
 
-To run the training and testing pipeline on Marimo Cloud Server or local GPU environment:
+## 🚀 Quick Start (Hướng dẫn Chạy Huấn luyện)
+
+Trên Server Marimo Cloud hoặc máy trạm GPU:
 
 ```bash
+cd /marimo/Multimodal_Custom_Models
+git checkout exp/stft256k-raw2049-freqattn-mobilenetv2-se-fbgf
+git pull origin exp/stft256k-raw2049-freqattn-mobilenetv2-se-fbgf
+
 cd src
-python main.py
+nohup python3 main.py > main.log 2>&1 &
+tail -n +1 -f main.log
 ```
 
-## 🛠️ Key Features
-1. **Pre-Emphasis Filter ($\alpha=0.97$)**: Amplifies high-frequency acoustic splash signals ($2\text{ kHz} - 8\text{ kHz}$) and attenuates low-frequency motor noise ($0 - 500\text{ Hz}$).
-2. **Raw STFT 2049 Bins (No Mel, No RGB)**: Computes high-resolution $2049$ frequency bins ($\Delta f = 62.5\text{ Hz}$) using Hamming windowing ($4096, 2048$), feeding raw float32 magnitude tensors directly to Conv2d layers.
-3. **Frequency-Domain Attention (F-Attention)**: Profiles temporal energy via `Mean` & `Std` across 2049 frequency bins, learning adaptive spectral attention weights $\mathbf{a}_F \in [0, 1]^{2049}$.
-4. **Depthwise-Separable Audio CNN**: Uses early strided convolution (`stride=(4, 2)`) to shrink frequency dimensions $2049 \rightarrow 513$ instantly, followed by depthwise-separable blocks to extract a 256d audio feature vector (~1.4M params).
-5. **Factorized Bilinear Gated Fusion (FBGF / GMF)**: Fuses 256d Audio with MobileNetV2 Video features using low-rank Multi-level Factorized Bilinear pooling ($k=3$), power & L2 normalization, and dynamic gated routing.
-6. **Optimized DataLoader**: Uses `cache_audio: true`, `video_cache_mode: "ram"`, `pin_memory = True`, `persistent_workers = True`, and dynamic worker calculation `num_workers = max_cpu_cores // 2 + 1`.
+---
+
+## 🛠️ Key Technical Features
+
+1. **Audio Encoder (Raw STFT 2049 Bins 256kHz)**: Phổ âm thanh siêu phân giải 2049 Bins, bộ lọc Pre-emphasis ($\alpha=0.97$), F-Domain Attention (Mean+Std), nén qua Depthwise-Separable Audio CNN $\rightarrow$ Vector 256-dim $[B, 256]$.
+2. **Video Encoder with SE-Recalibration**: MobileNetV2 trích vector đặc trưng $[B, 1280] \rightarrow$ Đi qua module **Squeeze-and-Excitation 1D Channel Recalibration (Mechanism 1)** để tự động tái hiệu chỉnh và khuếch đại các kênh chứa thông tin bọt nước/cá đớp mồi nhạy cảm, dập nén nhiễu môi trường bể nuôi.
+3. **Factorized Bilinear Gated Fusion (FBGF $k=3$)**: Kết hợp phép nhân Hadamard bậc hai ($\mathbf{a}_{\text{mfb}} \odot \mathbf{v}_{\text{mfb}}$) với cổng điều phối động $g = \sigma(W \cdot [\mathbf{a}, \mathbf{v}])$.
+4. **Fast ThreadPoolExecutor RAM Cache**: Nạp đa luồng $21,467$ khung hình mảng `uint8` ($3.15\text{ GB RAM}$) giúp chạy siêu tốc **20+ batches/giây (1-2s / epoch)**.
+5. **HuggingFace Auto Export**: Tự động tải kết quả & checkpoint lên HuggingFace repo `manhmitcf/fish_result/stft256k_raw2049_freqattn_mobilenetv2_se_fbgf`.
