@@ -27,7 +27,7 @@ def _load_strict(model: nn.Module, checkpoint_path: Path) -> None:
 
 
 class SourceVideoFeatureEncoder(nn.Module):
-    """Uses original VideoModel; a hook exposes pre-classifier visual feature vector."""
+    """Uses original VideoModel; returns both pre-trained 4D logits and 1280D feature vector."""
 
     def __init__(self, model: nn.Module, name: str) -> None:
         super().__init__()
@@ -43,7 +43,7 @@ class SourceVideoFeatureEncoder(nn.Module):
             return network.classifier[1]
         return network.head
 
-    def forward(self, images: Tensor) -> Tensor:
+    def forward(self, images: Tensor) -> tuple[Tensor, Tensor]:
         captured: list[Tensor] = []
 
         def save_pre_classifier(_module: nn.Module, inputs: tuple[Tensor, ...]) -> None:
@@ -51,13 +51,15 @@ class SourceVideoFeatureEncoder(nn.Module):
 
         hook = self._classifier().register_forward_pre_hook(save_pre_classifier)
         try:
-            self.model(images)
+            out_dict = self.model(images)
+            video_logits = out_dict["clipwise_output"] if isinstance(out_dict, dict) else out_dict
         finally:
             hook.remove()
 
         if len(captured) != 1 or captured[0].shape[-1] != self.feature_dim:
             raise RuntimeError(f"Could not capture expected {self.feature_dim}d {self.name} feature")
-        return captured[0]
+
+        return video_logits, captured[0]
 
 
 def build_video_encoder(config: RunConfig) -> SourceVideoFeatureEncoder:
