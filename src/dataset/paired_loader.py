@@ -1,4 +1,4 @@
-"""Pure, High-Performance RAM-Optimized Paired Dataset for STFT 256k Audio Waveforms and Video RGB Frames."""
+"""Pure, High-Performance Paired Dataset for STFT 256k Audio Waveforms and Video RGB Frames with 100% Float32 Precision."""
 
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ def build_video_transforms(split: str = "train", image_size: int = 224) -> trans
 
 
 class SourcePairedDataset(Dataset[dict[str, Any]]):
-    """RAM-Optimized Paired Dataset using float16 Audio Cache and PIL Image Video Cache."""
+    """Pure Paired Dataset loading 256k Raw Audio Waveforms and RGB Frames with 100% Float32 Precision."""
 
     def __init__(self, config: RunConfig, split: str) -> None:
         super().__init__()
@@ -117,10 +117,10 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
         self.cache_video_enabled = config.data.video_cache_mode == "ram"
 
         self.audio_cache: dict[int, Tensor] = {}
-        self.video_cache: dict[int, Image.Image] = {}
+        self.video_cache: dict[int, Tensor] = {}
 
         if self.cache_audio_enabled or self.cache_video_enabled:
-            logger.info(f"Preloading '{split}' split dataset into RAM (audio_cache_float16={self.cache_audio_enabled}, video_cache_pil={self.cache_video_enabled})...")
+            logger.info(f"Preloading '{split}' split dataset into RAM (audio_cache_float32={self.cache_audio_enabled}, video_cache_tensor={self.cache_video_enabled})...")
             self._preload_ram_cache()
 
     def _preload_ram_cache(self) -> None:
@@ -130,11 +130,11 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
         for idx in tqdm(range(len(self.records)), desc=f"Preloading '{self.split}' split into RAM", unit="sample", disable=disable_progress):
             rec = self.records[idx]
             if self.cache_audio_enabled and idx not in self.audio_cache:
-                self.audio_cache[idx] = self._load_audio_float16(rec["audio_path"])
+                self.audio_cache[idx] = self._load_audio(rec["audio_path"])
             if self.cache_video_enabled and idx not in self.video_cache:
-                self.video_cache[idx] = self._load_video_pil(rec["video_path"])
+                self.video_cache[idx] = self._load_video(rec["video_path"])
 
-    def _load_audio_float16(self, rel_path: str) -> Tensor:
+    def _load_audio(self, rel_path: str) -> Tensor:
         audio_file = resolve_dataset_file(self.dataset_base_dir, rel_path)
         try:
             waveform, sr = torchaudio.load(str(audio_file))
@@ -149,19 +149,19 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
         elif waveform.numel() > self.target_samples:
             waveform = waveform[: self.target_samples]
 
-        # Convert to float16 to reduce Audio RAM footprint by 50%
-        return waveform.to(dtype=torch.float16)
+        return waveform.to(dtype=torch.float32)
 
-    def _load_video_pil(self, rel_path: str) -> Image.Image:
+    def _load_video(self, rel_path: str) -> Tensor:
         video_file = resolve_dataset_file(self.dataset_base_dir, rel_path)
         try:
             if video_file.is_file() and video_file.suffix.lower() in (".png", ".jpg", ".jpeg"):
                 img = Image.open(video_file).convert("RGB")
             else:
                 img = Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
-            return img
+            return self.transform(img)
         except Exception:
-            return Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
+            img = Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
+            return self.transform(img)
 
     def __len__(self) -> int:
         return len(self.records)
@@ -171,14 +171,14 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
         label = rec["label"]
 
         if self.cache_audio_enabled and index in self.audio_cache:
-            waveform = self.audio_cache[index].to(dtype=torch.float32)
+            waveform = self.audio_cache[index]
         else:
-            waveform = self._load_audio_float16(rec["audio_path"]).to(dtype=torch.float32)
+            waveform = self._load_audio(rec["audio_path"])
 
         if self.cache_video_enabled and index in self.video_cache:
-            image = self.transform(self.video_cache[index])
+            image = self.video_cache[index]
         else:
-            image = self.transform(self._load_video_pil(rec["video_path"]))
+            image = self._load_video(rec["video_path"])
 
         return {
             "waveform": waveform,
