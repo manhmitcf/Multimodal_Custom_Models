@@ -97,6 +97,14 @@ $$\mathbf{h}_{\text{fused}} = \mathbf{g} \odot \text{ReLU}(\mathbf{W}_a \mathbf{
 ### 2.5 Bộ Phân loại (Classifier)
 $$\text{Logits} = \text{Linear}(256 \rightarrow 4) \in \mathbb{R}^{B \times 4}$$
 
+### 2.6 Yêu cầu In và Lưu Chi tiết Tham số & FLOPs (Parameter & Profiling Specs)
+Mã nguồn phải tính toán và in ra màn hình console / log file chi tiết 100%:
+- **Audio Encoder Params & FLOPs**: Số lượng tham số & FLOPs của Kênh Audio CNN (Pre-Emphasis + Raw STFT 2049 + F-Attn + Depthwise Blocks).
+- **Video Encoder Params & FLOPs**: Số lượng tham số & FLOPs của Kênh Video MobileNetV2.
+- **Fusion Head Params & FLOPs**: Số lượng tham số & FLOPs của Mô đun Dung hợp (FBGF / GMF).
+- **Total Model Params & FLOPs**: Tổng tham số & FLOPs toàn mạng.
+- **Ghi nhận vào File**: Tự động lưu các chỉ số này vào `summary_results.csv`, `best_val_metrics.json`, và `test_metrics.json` tại `src/checkpoint/`.
+
 ---
 
 ## 3. Cấu trúc Thư mục & Tiêu chuẩn Dự án
