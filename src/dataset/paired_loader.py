@@ -16,6 +16,18 @@ from settings import RunConfig
 
 def read_immutable_split(split_dir: Path, split: str) -> list[list[Any]]:
     path = Path(split_dir) / f"{split}.csv"
+    if not path.exists():
+        candidates = [
+            path,
+            Path.cwd() / "checkpoints" / "PANNS_Cnn6_holdout_random_sample_20260729_153012" / "DL_audio" / "checkpoint" / "panns_cnn6" / "splits" / f"{split}.csv",
+            Path.cwd().parent / "checkpoints" / "PANNS_Cnn6_holdout_random_sample_20260729_153012" / "DL_audio" / "checkpoint" / "panns_cnn6" / "splits" / f"{split}.csv",
+            Path(__file__).resolve().parent.parent.parent / "checkpoints" / "PANNS_Cnn6_holdout_random_sample_20260729_153012" / "DL_audio" / "checkpoint" / "panns_cnn6" / "splits" / f"{split}.csv",
+            Path(__file__).resolve().parent.parent / "checkpoints" / "PANNS_Cnn6_holdout_random_sample_20260729_153012" / "DL_audio" / "checkpoint" / "panns_cnn6" / "splits" / f"{split}.csv",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                path = candidate
+                break
     with path.open(encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         required = {"audio_path", "video_path", "label"}
