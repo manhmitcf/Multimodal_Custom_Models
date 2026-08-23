@@ -1,4 +1,4 @@
-"""New token/feature adapters that execute the original baseline models."""
+"""Token/Feature adapters that execute original PANNS CNN6 and MobileNetV2 baseline encoders."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from torch import Tensor, nn
 
 from models.reference_bridge import load_audio_reference, load_video_reference
 from settings import RunConfig
-
 
 VIDEO_FEATURE_DIMS = {"densenet121": 1024, "efficientnet_b0": 1280, "mobilenet_v2": 1280, "swin_tiny": 768}
 
@@ -26,7 +25,7 @@ def _six_windows(waveforms: Tensor) -> Tensor:
 
 
 class SourceAudioTokenEncoder(nn.Module):
-    """Uses original AudioModel; a new hook exposes one 512d token per window."""
+    """Uses original AudioModel; a forward hook exposes six 512d tokens per waveform."""
 
     def __init__(self, model: nn.Module) -> None:
         super().__init__()
@@ -52,7 +51,7 @@ class SourceAudioTokenEncoder(nn.Module):
 
 
 class SourceVideoFeatureEncoder(nn.Module):
-    """Uses original VideoModel; a new hook exposes the pre-classifier visual feature."""
+    """Uses original VideoModel; a forward hook exposes the 1280d pre-classifier visual feature vector."""
 
     def __init__(self, model: nn.Module, name: str) -> None:
         super().__init__()
@@ -85,7 +84,7 @@ class SourceVideoFeatureEncoder(nn.Module):
 
 
 def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, SourceVideoFeatureEncoder]:
-    """Instantiate and strict-load only the original source model classes."""
+    """Instantiate and strict-load original source PANNS CNN6 and MobileNetV2 models."""
     audio_reference = load_audio_reference(config.references.audio_repo)
     frontend_config = audio_reference.AudioFeaturesConfig(
         sample_rate=64000,
@@ -99,14 +98,21 @@ def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, S
         freq_drop_width=8,
         freq_stripes_num=2,
     )
-    audio_model = audio_reference.AudioModel(
-        frontend=audio_reference.AudioFrontend(config=frontend_config),
-        backbone=audio_reference.PANNS_Cnn6(classes_num=4),
+    raw_audio_model = audio_reference.AudioModel(
+        model_name="panns_cnn6",
+        features_config=frontend_config,
+        num_classes=4,
+        drop_rate=config.model.dropout,
+        global_pool="max",
     )
-    _load_strict(audio_model, config.audio_checkpoint)
+    _load_strict(raw_audio_model, config.audio_checkpoint)
 
     video_reference = load_video_reference(config.references.video_repo)
-    backbone = video_reference.video_backbones[config.model.video_backbone](classes_num=4, pretrained=False)
-    video_model = video_reference.VideoModel(backbone=backbone)
-    _load_strict(video_model, config.video_checkpoint)
-    return SourceAudioTokenEncoder(audio_model), SourceVideoFeatureEncoder(video_model, config.model.video_backbone)
+    raw_video_model = video_reference.VideoModel(
+        backbone_name=config.model.video_backbone,
+        num_classes=4,
+        drop_rate=config.model.dropout,
+    )
+    _load_strict(raw_video_model, config.video_checkpoint)
+
+    return SourceAudioTokenEncoder(raw_audio_model), SourceVideoFeatureEncoder(raw_video_model, config.model.video_backbone)
