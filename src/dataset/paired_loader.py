@@ -1,10 +1,11 @@
-"""Pure, High-Performance Paired Dataset for STFT 256k Audio Waveforms and Video RGB Frames."""
+"""Pure, High-Performance Paired Dataset for STFT 256k Audio Waveforms and Video RGB Frames matching U_FFIA27K_video architecture."""
 
 from __future__ import annotations
 
 import csv
 import logging
 import os
+import pickle
 from pathlib import Path
 from typing import Any
 
@@ -132,7 +133,7 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
             if self.cache_audio_enabled and idx not in self.audio_cache:
                 self.audio_cache[idx] = self._load_audio(rec["audio_path"])
             if self.cache_video_enabled and idx not in self.video_cache:
-                self.video_cache[idx] = self._load_video_pil(rec["video_path"])
+                self.video_cache[idx] = self._load_video_pil(rec["video_path"], idx)
 
     def _load_audio(self, rel_path: str) -> Tensor:
         sample_id = Path(rel_path).stem
@@ -165,14 +166,45 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
 
         return waveform.to(dtype=torch.float32)
 
-    def _load_video_pil(self, rel_path: str) -> Image.Image:
-        import cv2
+    def _load_video_pil(self, rel_path: str, index: int = 0) -> Image.Image:
+        # 1. Check disk cache candidates from U_FFIA27K_video
+        cache_candidates = [
+            Path(f"/marimo/video_cache/single_frame_size_224/{self.split}/{index}.pkl"),
+            Path(f"/marimo/video_cache/{self.split}/{index}.pkl"),
+            Path.cwd() / "video_cache" / f"{self.split}_{index}.pkl",
+        ]
+        for cache_path in cache_candidates:
+            if cache_path.exists():
+                try:
+                    with open(cache_path, "rb") as f:
+                        sample = pickle.load(f)
+                    image_form = sample.get("image_form")
+                    if isinstance(image_form, np.ndarray) and image_form.dtype == np.uint8:
+                        if image_form.shape[0] == 3:
+                            image_form = image_form.transpose(1, 2, 0)
+                        return Image.fromarray(image_form)
+                except Exception:
+                    pass
 
+        # 2. Decode using decord or cv2
         video_file = resolve_dataset_file(self.dataset_base_dir, rel_path)
         try:
             if video_file.is_file() and video_file.suffix.lower() in (".png", ".jpg", ".jpeg"):
                 return Image.open(video_file).convert("RGB")
-            
+
+            # Try decord VideoReader first (as in U_FFIA27K_video)
+            try:
+                from decord import VideoReader, cpu
+                vr = VideoReader(str(video_file), width=self.config.data.image_size, height=self.config.data.image_size, ctx=cpu(0))
+                if len(vr) > 0:
+                    frame_index = len(vr) // 2
+                    frame_rgb = vr.get_batch([frame_index]).asnumpy()[0]
+                    return Image.fromarray(frame_rgb)
+            except Exception:
+                pass
+
+            # Fallback to OpenCV cv2
+            import cv2
             cap = cv2.VideoCapture(str(video_file))
             if cap.isOpened():
                 frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -183,12 +215,13 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
                 if ret and frame is not None:
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     return Image.fromarray(frame_rgb)
+
             return Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
         except Exception:
             return Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
 
-    def _load_video(self, rel_path: str) -> Tensor:
-        img_pil = self._load_video_pil(rel_path)
+    def _load_video(self, rel_path: str, index: int = 0) -> Tensor:
+        img_pil = self._load_video_pil(rel_path, index)
         return self.transform(img_pil)
 
     def __len__(self) -> int:
@@ -206,7 +239,7 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
         if self.cache_video_enabled and index in self.video_cache:
             image = self.transform(self.video_cache[index])
         else:
-            image = self._load_video(rec["video_path"])
+            image = self._load_video(rec["video_path"], index)
 
         return {
             "waveform": waveform,
