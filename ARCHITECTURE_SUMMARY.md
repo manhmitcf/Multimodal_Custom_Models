@@ -17,44 +17,44 @@ Hai luồng đặc trưng được hòa trộn bằng **Factorized Bilinear Gate
 
 ```mermaid
 graph TD
-    subgraph Kênh Âm thanh (Audio Pipeline - 256kHz)
-        A1[Raw Audio 256kHz] --> A2[Pre-Emphasis Filter alpha=0.97]
-        A2 --> A3[Raw STFT 2049 Bins dB scale]
-        A3 --> A4[Frequency-Domain Attention Mean+Std Profiling]
-        A4 --> A5[Early Strided Conv2D 4x2 Stride]
-        A5 --> A6[Depthwise-Separable Audio CNN Blocks]
-        A6 --> AudFeat[Audio Feature Vector 256d]
+    subgraph AudioPipeline ["Kênh Âm thanh (Audio Pipeline - 256kHz)"]
+        A1["Raw Audio 256kHz"] --> A2["Pre-Emphasis Filter (alpha=0.97)"]
+        A2 --> A3["Raw STFT 2049 Bins (dB scale)"]
+        A3 --> A4["Frequency-Domain Attention (Mean+Std Profiling)"]
+        A4 --> A5["Early Strided Conv2D (4x2 Stride)"]
+        A5 --> A6["Depthwise-Separable Audio CNN Blocks"]
+        A6 --> AudFeat["Audio Feature Vector (256d)"]
     end
 
-    subgraph Kênh Thị giác (Video Pipeline - MobileNetV2)
-        V1[Video Clip .mp4] --> V2[Center RGB Frame Decoder 224x224]
-        V2 --> V3[Frozen MobileNetV2 eval mode]
-        V3 --> VidFeat[Video Feature Vector 1280d]
+    subgraph VideoPipeline ["Kênh Thị giác (Video Pipeline - MobileNetV2)"]
+        V1["Video Clip .mp4"] --> V2["Center RGB Frame Decoder (224x224)"]
+        V2 --> V3["Frozen MobileNetV2 (eval mode)"]
+        V3 --> VidFeat["Video Feature Vector (1280d)"]
     end
 
-    subgraph Đầu Dung hợp Đa phương thức (FBGF Fusion Head)
-        AudFeat --> AudProj[Identity / Linear Projection 256d]
-        VidFeat --> VidProj[Linear Projection 1280d to 256d]
+    subgraph FusionHead ["Đầu Dung hợp Đa phương thức (FBGF Fusion Head)"]
+        AudFeat --> AudProj["Identity / Linear Projection (256d)"]
+        VidFeat --> VidProj["Linear Projection (1280d to 256d)"]
 
-        AudProj --> Gate[Dynamic Gated Routing Gate]
+        AudProj --> Gate["Dynamic Gated Routing Gate"]
         VidProj --> Gate
-        Gate --> VectorG[Gate Vector g in 0, 1^256]
+        Gate --> VectorG["Gate Vector g in [0, 1]^256"]
 
-        AudProj --> MFB_A[Linear Projection 256d to 768d]
-        VidProj --> MFB_V[Linear Projection 256d to 768d]
+        AudProj --> MFB_A["Linear Projection (256d to 768d)"]
+        VidProj --> MFB_V["Linear Projection (256d to 768d)"]
 
-        MFB_A --> Hadamard[Hadamard Product a_mfb x v_mfb]
+        MFB_A --> Hadamard["Hadamard Product (a_mfb x v_mfb)"]
         MFB_V --> Hadamard
-        Hadamard --> SumPool[Sum-Pooling k=3 to 256d]
-        SumPool --> PowerNorm[Power Norm sign x sqrt abs x]
-        PowerNorm --> LayerNorm[LayerNorm to f_bilinear]
+        Hadamard --> SumPool["Sum-Pooling (k=3 to 256d)"]
+        SumPool --> PowerNorm["Power Norm (sign(x) * sqrt(|x|))"]
+        PowerNorm --> LayerNorm["LayerNorm to f_bilinear"]
 
-        LayerNorm --> GatedBlend[Blended Gated Combination]
+        LayerNorm --> GatedBlend["Blended Gated Combination"]
         VectorG --> GatedBlend
         VidProj --> GatedBlend
 
-        GatedBlend --> Classifier[Classifier GELU + Dropout 0.1]
-        Classifier --> Logits[Final Logits 4-Classes]
+        GatedBlend --> Classifier["Classifier GELU + Dropout 0.1"]
+        Classifier --> Logits["Final Logits (4 Classes)"]
     end
 ```
 
