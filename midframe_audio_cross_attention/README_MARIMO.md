@@ -1,22 +1,22 @@
-# SwinTiny iBOT-inspired spatial pretraining + audio fusion (Marimo)
+# Method 3 (GW-AVF): Geometry & Water-Ripple Audio-Visual Cross-Attention (Marimo Guide)
 
-This branch starts from the existing supervised SwinTiny checkpoint, adapts it
-without feeding-intensity labels on centre frames from the immutable **training
-split only**, then trains the four-class audio-video model. Run everything
-from this directory with one command: `python main.py`.
+Biển hướng dẫn này dành cho **Nhánh `exp/geometry-water-ripple-cross-attn`**, triển khai **Phương pháp 3 (GW-AVF)**: Tự động trích xuất đặc trưng **Sóng nước (Water Ripples)** & **Mật độ hình học đàn cá (Delaunay Flocking Geometry)** trên lưới $14 \times 14$ không gian, dung hợp với $6$ audio tokens thông qua Cross-Attention, và tự động nén/upload kết quả đầy đủ lên **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.
 
-## 1. Clone this branch
+---
+
+## 1. Clone nhánh thí nghiệm này
 
 ```bash
 cd /marimo
-git clone --branch exp/swin-tiny-ibot-spatial-pretrain --single-branch https://github.com/manhmitcf/Multimodal_Custom_Models.git
+git clone --branch exp/geometry-water-ripple-cross-attn --single-branch https://github.com/manhmitcf/Multimodal_Custom_Models.git
 cd Multimodal_Custom_Models
 git branch --show-current
 ```
+*Lưu ý: Lệnh `git branch` phải hiển thị đúng `exp/geometry-water-ripple-cross-attn`.*
 
-The last command must print `exp/swin-tiny-ibot-spatial-pretrain`.
+---
 
-## 2. Download the dataset
+## 2. Tải bộ dữ liệu (Dataset Setup)
 
 ```bash
 sudo apt update && sudo apt install git-lfs unzip -y
@@ -27,20 +27,18 @@ nohup git clone https://huggingface.co/datasets/manhmitcf/Fish_Feeding_Intensity
 tail -n +1 -f clone.log
 ```
 
-The final dataset path must be `/marimo/Fish_Feeding_Intensity_Dataset`. If
-the Hugging Face clone created nested directories, normalize them after clone:
-
+Chuẩn hóa cấu trúc thư mục dữ liệu nếu Hugging Face clone tạo các thư mục con lồng nhau:
 ```bash
-mv /marimo/Fish_Feeding_Intensity_Dataset/audio/audio/* /marimo/Fish_Feeding_Intensity_Dataset/audio/
-mv /marimo/Fish_Feeding_Intensity_Dataset/video/video/* /marimo/Fish_Feeding_Intensity_Dataset/video/
-rm -rf /marimo/Fish_Feeding_Intensity_Dataset/audio/audio
-rm -rf /marimo/Fish_Feeding_Intensity_Dataset/video/video
+mv /marimo/Fish_Feeding_Intensity_Dataset/audio/audio/* /marimo/Fish_Feeding_Intensity_Dataset/audio/ 2>/dev/null || true
+mv /marimo/Fish_Feeding_Intensity_Dataset/video/video/* /marimo/Fish_Feeding_Intensity_Dataset/video/ 2>/dev/null || true
+rm -rf /marimo/Fish_Feeding_Intensity_Dataset/audio/audio /marimo/Fish_Feeding_Intensity_Dataset/video/video
 ```
 
-## 3. Download checkpoints and immutable split files
+---
 
-The default configuration needs only the PANNS Cnn6 archive and SwinTiny video
-archive.
+## 3. Tải Checkpoints & Immutable Splits
+
+Tải các checkpoint tiền huấn luyện của Audio (PANNS Cnn6) và Visual (SwinTiny):
 
 ```bash
 cd /marimo/Multimodal_Custom_Models
@@ -57,112 +55,75 @@ unzip -q /tmp/uffia_checkpoints/SwinTiny_holdout_random_sample_20260729_153012.z
 rm -rf /tmp/uffia_checkpoints
 ```
 
-Confirm the files before running:
-
+Kiểm tra sự tồn tại của file checkpoint trước khi chạy:
 ```bash
-test -f checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/audio_best.pt && echo "audio checkpoint OK"
-test -f checkpoints/SwinTiny_holdout_random_sample_20260729_153012/DL_video/checkpoint/swin_tiny/video_best.pt && echo "Swin checkpoint OK"
-test -f checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/splits/train.csv && echo "immutable split OK"
+test -f checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/audio_best.pt && echo "Audio Checkpoint OK"
+test -f checkpoints/SwinTiny_holdout_random_sample_20260729_153012/DL_video/checkpoint/swin_tiny/video_best.pt && echo "Video Checkpoint OK"
+test -f checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/splits/train.csv && echo "Splits CSV OK"
 ```
 
-## 4. Install and run
+---
 
+## 4. Cài đặt thư viện & Khởi chạy Pipeline
+
+Đăng nhập Hugging Face (hoặc set biến môi trường `HF_TOKEN`) để tự động upload kết quả:
+```bash
+hf auth login
+```
+
+Chạy trực tiếp pipeline thí nghiệm Phương pháp 3:
 ```bash
 cd /marimo/Multimodal_Custom_Models/midframe_audio_cross_attention
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+
+# Khởi chạy Phương pháp 3 (GW-AVF)
 python main.py
 ```
 
-For a background run:
-
+Nếu chạy ẩn trong background:
 ```bash
 nohup python3 main.py > main.log 2>&1 &
 tail -n +1 -f main.log
 ```
 
-## What `main.py` does
+---
+
+## 🏗️ Kiến trúc Phương pháp 3 (GW-AVF) Hoạt động Như thế nào?
 
 ```text
-Existing supervised SwinTiny checkpoint
-  -> iBOT-inspired adaptation on centre frames from train.csv only
-  -> Swin stage-3 grid: 14 x 14 = 196 spatial tokens, 384 dimensions
-  -> PANNS Cnn6 emits six 512-dimensional audio tokens
-  -> visual tokens are conditioned on audio tokens
-  -> mean pool and classify four feeding-intensity classes
+       Middle Video Frame (RGB)                       Audio 2s (Waveform)
+                  │                                            │
+   ┌──────────────┴──────────────┐                       Audio Encoder
+   ▼                             ▼                             │
+SwinTiny (Stage 3)     Geometry & Water-Ripple                 │
+Spatial Tokens Grid    Feature Extractors                      │
+(196 x 384)            (Wavelet & Delaunay)                    │
+   │                             │                             │
+   └──────────────┬──────────────┘                             │
+                  ▼                                            ▼
+     Geometry-Enhanced Visual Tokens ────────────►  Cross-Attention Fusion
+             (196 x d_model)                        (Q=Visual, K,V=Audio)
+                                                               │
+                                                       Classifier (4 classes)
 ```
 
-The iBOT adaptation has no feeding-intensity loss and never reads frames named
-by `val.csv` or `test.csv`. Only after adaptation does supervised multimodal
-training run: train, choose `best.pt` by validation macro-F1, reload it, and
-evaluate the holdout test split once.
+---
 
-## Configuration
+## 📂 Danh sách Kết quả Đầu ra (Outputs Checkpoint Artifacts)
 
-Edit only `config/train_config.json`.
-
-- `model.video_backbone` must remain `swin_tiny`.
-- `model.encoder_mode: "frozen"` trains only fusion after adaptation. Set it
-  to `"tune"` to update PANNS late layers and Swin stages 3/4 with the lower
-  `training.encoder_learning_rate`.
-- `ibot_pretraining.enabled` enables the label-free phase.
-- If CUDA runs out of memory, reduce `ibot_pretraining.batch_size` from `32`
-  to `16` or `8` before changing the supervised batch size.
-- `data.split_dir` must point to the archived PANNS `splits/` directory. Never
-  regenerate or overwrite the split.
-
-## Ordered experiment configurations
-
-Four ready-to-run sweeps are in `config/`. They preserve the same checkpoint,
-split, seed, and data policy; only iBOT strength and supervised fine-tuning
-change. Run exactly one at a time:
-
-```bash
-python main.py --config config/train_config_01_frozen_light.json
-python main.py --config config/train_config_02_frozen_standard.json
-python main.py --config config/train_config_03_tune_gentle.json
-python main.py --config config/train_config_04_tune_strong_mask.json
-```
-
-- `01`: conservative 30-epoch iBOT adaptation; frozen encoders.
-- `02`: standard 50-epoch iBOT adaptation; frozen encoders.
-- `03`: standard adaptation, then gentle Swin/PANNS late-layer fine-tuning.
-- `04`: longer, higher-mask adaptation, then slower fine-tuning; use this only
-  when GPU memory supports the smaller configured batches.
-
-## Outputs
-
-The default run writes these files under
-`runs/swin_tiny_ibot_stage3_cross_attn/`:
+Thư mục kết quả `checkpoint/` (hoặc `runs/...`) sẽ được sinh ra đầy đủ 100%:
 
 ```text
-ibot_pretraining/ibot_pretrain_best.pt
-best.pt
-best_val_metrics.json
-best_val_confusion_matrix.csv
-test_metrics.json
-test_confusion_matrix.csv
+checkpoint/
+  ├── splits/                          <- Thư mục chứa train.csv, val.csv, test.csv
+  ├── best.pt                          <- Checkpoint PyTorch lưu model_state_dict & val_macro_f1 tốt nhất
+  ├── history.csv                      <- Log lịch sử từng epoch (loss, acc, F1, 16 cột CM)
+  ├── summary_results.csv              <- Bảng tổng hợp F1 & Accuracy tập Test Holdout
+  ├── best_val_metrics.json            <- Chỉ số chi tiết Validation
+  ├── test_metrics.json                <- Chỉ số chi tiết Holdout Test
+  ├── best_val_confusion_matrix.csv    <- Ma trận nhầm lẫn Validation 4x4 (có nhãn)
+  └── test_confusion_matrix.csv        <- Ma trận nhầm lẫn Holdout Test 4x4 (có nhãn)
 ```
 
-Keep the iBOT checkpoint, final metrics, JSON config, commit hash, seed, and
-batch sizes together when reporting the experiment.
-
-## Upload CSV results to Hugging Face
-
-All supplied JSON files upload the final validation and holdout results to the
-Hugging Face Dataset `manhmitcf/fish_result` after training has completed
-successfully. Each upload contains `best_val_metrics.json`,
-`best_val_confusion_matrix.csv`, `test_metrics.json`, and
-`test_confusion_matrix.csv`. The upload path includes the run name and a
-timestamp, so previous runs are not overwritten.
-
-Authenticate once on Marimo before starting a run. Do not put a token in a
-JSON file, source file, notebook, or Git commit:
-
-```bash
-hf auth login
-```
-
-Alternatively set `HF_TOKEN` only in the Marimo shell/session. If
-authentication or upload fails, the training result remains safely in the
-local run directory and the script logs a warning instead of failing the run.
+Cuối quá trình chạy, toàn bộ thư mục này sẽ được tự động đóng gói thành file `.zip` và tải lên repository **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.
