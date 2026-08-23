@@ -118,9 +118,9 @@ class RunConfig:
 
     @classmethod
     def from_json(cls, path: Path | str) -> "RunConfig":
-        path = Path(path)
+        path = Path(path).resolve()
         raw = json.loads(path.read_text(encoding="utf-8"))
-        base = path.parent
+        base = path.parent.parent if path.parent.name == "config" else path.parent
 
         def resolve(value: str) -> Path:
             candidate = Path(value)
