@@ -1,4 +1,4 @@
-"""Single-Modality Pure Audio Only (PANNS CNN6 Unfrozen Full Fine-Tuning) Entry Point."""
+"""Single-Modality Audio Only (PANNS CNN6 Unfrozen + STFT-dB 256k) Entry Point."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 
 from config.artifact_upload_config import ArtifactUploadConfig
 from dataset.paired_loader import SourcePairedDataset, paired_collate
-from models.fusion_model import AudioPannsOnlyModel
+from models.fusion_model import AudioStftPannsOnlyModel
 from models.source_encoders import SourceAudioTokenEncoder
 from models.reference_bridge import load_audio_reference
 from settings import RunConfig
@@ -26,7 +26,7 @@ UPLOAD_CONFIG_PATH = Path(__file__).parent / "config" / "artifact_upload_config.
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Single-Modality Pure Audio Only (PANNS CNN6 Unfrozen Full Fine-Tuning).")
+    parser = argparse.ArgumentParser(description="Run Single-Modality Audio Only (PANNS CNN6 Unfrozen + STFT-dB 256k).")
     parser.add_argument(
         "--config",
         type=Path,
@@ -57,7 +57,7 @@ def main() -> None:
     torch.manual_seed(config.training.seed)
     device = resolve_device(config.training.device)
 
-    # Build Pure PANNS CNN6 Audio Encoder directly using baseline reference
+    # Build PANNS CNN6 Audio Encoder directly using baseline reference
     audio_ref = load_audio_reference(config.references.audio_repo)
     frontend_config = audio_ref.AudioFeaturesConfig(
         sample_rate=64000,
@@ -80,8 +80,8 @@ def main() -> None:
         audio_model.load_state_dict(ckpt["model_state_dict"], strict=True)
     audio_encoder = SourceAudioTokenEncoder(audio_model)
 
-    # Instantiate Pure Single-Modality PANNS CNN6 Model
-    model = AudioPannsOnlyModel(
+    # Instantiate Single-Modality PANNS CNN6 + STFT-dB 256k Model
+    model = AudioStftPannsOnlyModel(
         audio_panns_encoder=audio_encoder.to(device),
         d_model=config.model.d_model,
         num_heads=config.model.num_heads,
