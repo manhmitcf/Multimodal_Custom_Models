@@ -14,7 +14,6 @@ from typing import Any, Dict, Optional
 import numpy as np
 import torch
 import torchaudio
-import torchvision.transforms.functional as TF
 from PIL import Image
 from torch import Tensor
 from torch.utils.data import Dataset
@@ -95,30 +94,11 @@ def read_immutable_split(split_dir: Path, split: str) -> list[dict[str, Any]]:
         ]
 
 
-class ImageToPIL:
-    """Convert one RGB image in [C, H, W] or [H, W, C] format to PIL Image matching U_FFIA27K_video exactly."""
-    def __call__(self, image: np.ndarray | Image.Image | Tensor) -> Image.Image:
-        if isinstance(image, np.ndarray):
-            if image.ndim != 3:
-                raise ValueError(f"Expected image with 3 dimensions, got shape {tuple(image.shape)}")
-            if image.shape[0] == 3:
-                image = image.transpose(1, 2, 0)
-            return TF.to_pil_image(image)
-        if isinstance(image, torch.Tensor):
-            if image.ndim != 3:
-                raise ValueError(f"Expected image with 3 dimensions, got shape {tuple(image.shape)}")
-            if image.shape[0] != 3 and image.shape[-1] == 3:
-                image = image.permute(2, 0, 1)
-            return TF.to_pil_image(image)
-        return image
-
-
 def build_video_transforms(split: str = "train", image_size: int = 224) -> transforms.Compose:
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     if split == "train":
         return transforms.Compose(
             [
-                ImageToPIL(),
                 transforms.Resize((image_size, image_size)),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
@@ -127,7 +107,6 @@ def build_video_transforms(split: str = "train", image_size: int = 224) -> trans
         )
     return transforms.Compose(
         [
-            ImageToPIL(),
             transforms.Resize((image_size, image_size)),
             transforms.ToTensor(),
             normalize,
@@ -135,97 +114,8 @@ def build_video_transforms(split: str = "train", image_size: int = 224) -> trans
     )
 
 
-def _load_image_from_disk_cache(
-    cache_path: Optional[Path],
-    video_path: str,
-    image_size: int,
-    label: Any
-) -> Optional[Dict[str, Any]]:
-    """Load pre-processed center frame sample from disk cache matching U_FFIA27K_video."""
-    if cache_path is None or not cache_path.exists():
-        return None
-
-    try:
-        with open(cache_path, "rb") as f:
-            sample = pickle.load(f)
-    except Exception:
-        return None
-
-    image_form = sample.get("image_form")
-    expected_shape_chw = (3, image_size, image_size)
-    expected_shape_hwc = (image_size, image_size, 3)
-
-    if not isinstance(image_form, np.ndarray) or image_form.dtype != np.uint8:
-        return None
-
-    if image_form.shape == expected_shape_hwc:
-        image_form = image_form.transpose(2, 0, 1)
-
-    if image_form.shape != expected_shape_chw:
-        return None
-
-    return {
-        "video_name": video_path,
-        "image_form": image_form,
-        "target": label,
-    }
-
-
-def _decode_center_image(video_file: Path, label: Any, image_size: int) -> Dict[str, Any]:
-    """Decode center frame from video using decord or cv2 matching U_FFIA27K_video."""
-    try:
-        from decord import VideoReader, cpu
-        vr = VideoReader(str(video_file), width=image_size, height=image_size, ctx=cpu(0))
-        if len(vr) > 0:
-            frame_index = len(vr) // 2
-            image = vr.get_batch([frame_index]).asnumpy()[0]  # [H, W, C] RGB
-            image_uint8 = image.transpose(2, 0, 1).astype(np.uint8)  # [C, H, W]
-            return {"video_name": str(video_file), "image_form": image_uint8, "target": label}
-    except Exception:
-        pass
-
-    import cv2
-    cap = cv2.VideoCapture(str(video_file))
-    if cap.isOpened():
-        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        frame_index = max(frame_count // 2, 0)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
-        ret, frame = cap.read()
-        cap.release()
-        if ret and frame is not None:
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame_resized = cv2.resize(frame_rgb, (image_size, image_size), interpolation=cv2.INTER_LINEAR)
-            image_uint8 = frame_resized.transpose(2, 0, 1).astype(np.uint8)
-            return {"video_name": str(video_file), "image_form": image_uint8, "target": label}
-
-    image_uint8 = np.zeros((3, image_size, image_size), dtype=np.uint8)
-    return {"video_name": str(video_file), "image_form": image_uint8, "target": label}
-
-
-def _load_or_create_image_sample(
-    index: int,
-    rel_video_path: str,
-    label: Any,
-    image_size: int,
-    split: str,
-    dataset_base_dir: Path
-) -> Dict[str, Any]:
-    cache_candidates = [
-        Path(f"/marimo/video_cache/single_frame_size_224/{split}/{index}.pkl"),
-        Path(f"/marimo/video_cache/{split}/{index}.pkl"),
-        Path.cwd() / "video_cache" / f"{split}_{index}.pkl",
-    ]
-    for cache_path in cache_candidates:
-        cached_sample = _load_image_from_disk_cache(cache_path, rel_video_path, image_size, label)
-        if cached_sample is not None:
-            return cached_sample
-
-    video_file = resolve_dataset_file(dataset_base_dir, rel_video_path)
-    return _decode_center_image(video_file, label, image_size)
-
-
 class SourcePairedDataset(Dataset[dict[str, Any]]):
-    """RAM-Optimized Paired Dataset strictly matching U_FFIA27K_video RAM caching architecture."""
+    """RAM-Optimized Paired Dataset ensuring 100% exact loss and accuracy match with DISK mode."""
 
     def __init__(self, config: RunConfig, split: str) -> None:
         super().__init__()
@@ -242,7 +132,7 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
         self.cache_video_enabled = (config.data.video_cache_mode == "ram")
 
         self.audio_cache: dict[int, Tensor] = {}
-        self.video_cache: list[dict[str, Any] | None] = [None] * len(self.records)
+        self.video_cache: list[np.ndarray | None] = [None] * len(self.records)
 
         if self.cache_audio_enabled or self.cache_video_enabled:
             logger.info(f"Initial Process Memory before '{split}' RAM preload: {get_process_memory_str()}")
@@ -251,21 +141,18 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
     def _preload_ram_cache(self) -> None:
         total_samples = len(self.records)
         num_workers = max(os.cpu_count() or 4, 1)
-        logger.info(f"Preloading '{self.split}' split into RAM matching U_FFIA27K_video (uint8 [3, 224, 224] format, ThreadPoolExecutor {num_workers} workers)...")
+        logger.info(f"Preloading '{self.split}' split into RAM (uint8 [3, 224, 224] format, ThreadPoolExecutor {num_workers} workers)...")
 
-        def load_sample(idx_rec: tuple[int, dict[str, Any]]) -> tuple[int, Tensor | None, dict[str, Any] | None]:
+        def load_sample(idx_rec: tuple[int, dict[str, Any]]) -> tuple[int, Tensor | None, np.ndarray | None]:
             idx, rec = idx_rec
             audio_wave = self._load_audio(rec["audio_path"]) if self.cache_audio_enabled else None
-            sample_dict = _load_or_create_image_sample(
-                index=idx,
-                rel_video_path=rec["video_path"],
-                label=rec["label"],
-                image_size=self.config.data.image_size,
-                split=self.split,
-                dataset_base_dir=self.dataset_base_dir,
-            ) if self.cache_video_enabled else None
-
-            return idx, audio_wave, sample_dict
+            if self.cache_video_enabled:
+                img_pil = self._load_video_pil(rec["video_path"], idx)
+                img_np = np.array(img_pil, dtype=np.uint8) # [H, W, C] uint8
+                video_uint8 = img_np.transpose(2, 0, 1)    # [C, H, W] uint8 (147 KB per image)
+            else:
+                video_uint8 = None
+            return idx, audio_wave, video_uint8
 
         indexed_records = list(enumerate(self.records))
         completed_count = 0
@@ -279,12 +166,12 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
                 for future in concurrent.futures.as_completed(futures):
                     completed_count += 1
                     try:
-                        idx, audio_wave, sample_dict = future.result()
+                        idx, audio_wave, video_uint8 = future.result()
                         if audio_wave is not None:
                             self.audio_cache[idx] = audio_wave
-                        if sample_dict is not None:
-                            self.video_cache[idx] = sample_dict
-                            total_bytes += sample_dict["image_form"].nbytes
+                        if video_uint8 is not None:
+                            self.video_cache[idx] = video_uint8
+                            total_bytes += video_uint8.nbytes
                     except Exception as exc:
                         logger.error(f"Error preloading sample index: {exc}")
 
@@ -330,6 +217,64 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
 
         return waveform.to(dtype=torch.float32)
 
+    def _load_video_pil(self, rel_path: str, index: int = 0) -> Image.Image:
+        # 1. Check disk cache candidates from U_FFIA27K_video
+        cache_candidates = [
+            Path(f"/marimo/video_cache/single_frame_size_224/{self.split}/{index}.pkl"),
+            Path(f"/marimo/video_cache/{self.split}/{index}.pkl"),
+            Path.cwd() / "video_cache" / f"{self.split}_{index}.pkl",
+        ]
+        for cache_path in cache_candidates:
+            if cache_path.exists():
+                try:
+                    with open(cache_path, "rb") as f:
+                        sample = pickle.load(f)
+                    image_form = sample.get("image_form")
+                    if isinstance(image_form, np.ndarray) and image_form.dtype == np.uint8:
+                        if image_form.shape[0] == 3:
+                            image_form = image_form.transpose(1, 2, 0)
+                        return Image.fromarray(image_form)
+                except Exception:
+                    pass
+
+        # 2. Decode using decord or cv2
+        video_file = resolve_dataset_file(self.dataset_base_dir, rel_path)
+        try:
+            if video_file.is_file() and video_file.suffix.lower() in (".png", ".jpg", ".jpeg"):
+                return Image.open(video_file).convert("RGB")
+
+            # Try decord VideoReader first (as in U_FFIA27K_video)
+            try:
+                from decord import VideoReader, cpu
+                vr = VideoReader(str(video_file), width=self.config.data.image_size, height=self.config.data.image_size, ctx=cpu(0))
+                if len(vr) > 0:
+                    frame_index = len(vr) // 2
+                    frame_rgb = vr.get_batch([frame_index]).asnumpy()[0]
+                    return Image.fromarray(frame_rgb)
+            except Exception:
+                pass
+
+            # Fallback to OpenCV cv2
+            import cv2
+            cap = cv2.VideoCapture(str(video_file))
+            if cap.isOpened():
+                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                frame_idx = max(frame_count // 2, 0)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                cap.release()
+                if ret and frame is not None:
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    return Image.fromarray(frame_rgb)
+
+            return Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
+        except Exception:
+            return Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
+
+    def _load_video(self, rel_path: str, index: int = 0) -> Tensor:
+        img_pil = self._load_video_pil(rel_path, index)
+        return self.transform(img_pil)
+
     def __len__(self) -> int:
         return len(self.records)
 
@@ -343,19 +288,11 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
             waveform = self._load_audio(rec["audio_path"])
 
         if self.cache_video_enabled and self.video_cache[index] is not None:
-            sample_dict = self.video_cache[index]
-            image_uint8 = sample_dict["image_form"] # np.ndarray [3, 224, 224] uint8
-            image = self.transform(image_uint8)
+            img_np = self.video_cache[index] # [3, 224, 224] uint8
+            img_pil = Image.fromarray(img_np.transpose(1, 2, 0)) # Exact RGB PIL Image restored!
+            image = self.transform(img_pil)
         else:
-            sample_dict = _load_or_create_image_sample(
-                index=index,
-                rel_video_path=rec["video_path"],
-                label=label,
-                image_size=self.config.data.image_size,
-                split=self.split,
-                dataset_base_dir=self.dataset_base_dir,
-            )
-            image = self.transform(sample_dict["image_form"])
+            image = self._load_video(rec["video_path"], index)
 
         return {
             "waveform": waveform,
