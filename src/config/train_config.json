@@ -1,0 +1,52 @@
+{
+  "stft": {
+    "sr": 256000,
+    "pre_emphasis": 0.97,
+    "frame_length": 4096,
+    "hop_length": 2048,
+    "n_fft": 4096,
+    "windowing": "hamming",
+    "use_std": true
+  },
+  "references": {
+    "audio_repo": "../U_FFIA27K_audio",
+    "video_repo": "../U_FFIA27K_video"
+  },
+  "checkpoints": {
+    "audio": "../checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/audio_best.pt",
+    "video_by_backbone": {
+      "mobilenet_v2": "../checkpoints/MobileNetV2_holdout_random_sample_20260729_153012/DL_video/checkpoint/mobilenet_v2/video_best.pt"
+    }
+  },
+  "data": {
+    "split_dir": "../checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/splits",
+    "cache_audio": true,
+    "video_cache_mode": "ram",
+    "num_workers": -1,
+    "image_size": 224
+  },
+  "model": {
+    "video_backbone": "mobilenet_v2",
+    "encoder_mode": "tune",
+    "d_model": 256,
+    "dropout": 0.1,
+    "fusion_type": "fbgf"
+  },
+  "training": {
+    "batch_size": 16,
+    "epochs": 100,
+    "fusion_learning_rate": 0.001,
+    "encoder_learning_rate": 0.0001,
+    "weight_decay": 0.0001,
+    "seed": 42,
+    "device": "auto",
+    "output_dir": "checkpoint"
+  },
+  "results_upload": {
+    "enabled": true,
+    "repo_id": "manhmitcf/fish_result",
+    "repo_type": "dataset",
+    "path_prefix": "stft256k_raw2049_freqattn_mobilenetv2_fbgf",
+    "create_repo": true
+  }
+}

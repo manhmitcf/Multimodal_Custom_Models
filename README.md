@@ -1,43 +1,20 @@
-# Multimodal Custom Models: Fish Feeding Intensity Assessment (U-FFIA27K)
+# STFT 256k Raw 2049 Bins with Frequency-Domain Attention & MobileNetV2 Factorized Bilinear Gated Fusion
 
-Hệ thống nghiên cứu & xây dựng các mô hình AI Đa thức (**Multimodal Audio-Visual**) phục vụ đánh giá cường độ cho cá ăn (Fish Feeding Intensity Assessment) gồm 4 lớp phân loại (`unfed`, `low`, `medium`, `high`) trên bộ dữ liệu **U-FFIA27K**.
+**Branch**: `exp/stft256k-raw2049-freqattn-mobilenetv2-fbgf`
 
----
+## 🌟 Quick Start Guide
 
-## 📁 Cấu trúc Thư mục Chính
+To run the training and testing pipeline on Marimo Cloud Server or local GPU environment:
 
-| Thư mục | Chức năng & Mô tả |
-| :--- | :--- |
-| 📁 [**`src/`**](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/src) | **Mã nguồn Chính của Phương pháp**: Chứa Dataloader, Models, Features, Tasks và Scripts khởi chạy. |
-| 📁 [**`U_FFIA27K_audio/`**](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/U_FFIA27K_audio) | Huấn luyện & đánh giá Baseline Audio độc lập (PANNs CNN6/10/14, ResNet22, MobileNetV1/V2, EfficientNetB0). |
-| 📁 [**`U_FFIA27K_video/`**](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/U_FFIA27K_video) | Huấn luyện & đánh giá Baseline Video độc lập (SwinTiny, DINOv2, ResNet18/50, DenseNet121, ConvNeXtTiny). |
-| 📁 `papers/` | Chứa 50+ bài báo nghiên cứu khoa học phân loại theo 5 chủ đề chuyên sâu. |
-
----
-
-## 🌿 Danh sách các Nhánh Thí nghiệm (Branches)
-
-* **`exp/stft256k-panns-mobilenetv2-cross-attn`** *(Nhánh hiện tại)*: Kế thừa **PANNs CNN6 Full Fine-Tune + STFT 256k** (Kênh Audio) dung hợp với **MobileNetV2** (Kênh Video) thông qua **Spatial Cross-Attention, Factorized Bilinear MFB Pooling & Modality Dropout**.
-* **`exp/audio-stft-panns-cnn6-only`**: Đơn thức Âm thanh (Audio Only) kết hợp PANNs CNN6 Full Fine-Tune + STFT 256k Spectrogram High-Res.
-* **`exp/geometry-water-ripple-cross-attn`** *(Phương pháp 3)*: Tự động trích xuất đặc trưng **Sóng nước (Water Ripples)** & **Mật độ hình học đàn cá (Delaunay Flocking Geometry)** kết hợp với Cross-Attention Audio-Visual.
-* **`exp/robust-bilinear-pooling-modality-dropout`** *(Phương pháp 4)*: Kết hợp **Multi-level Factorized Bilinear Pooling (MFB)** & **Modality Dropout** chống mất/nhiễu kênh tín hiệu.
-* **`exp/swin-tiny-ibot-spatial-pretrain`**: Pretraining tự giám sát iBOT SSL trên khung hình giữa của tập train không nhãn.
-* **`exp/stft256k-spatial-video-cross-attn`**: Biến đổi kênh âm thanh 256k STFT high-res tokens + Automatic Mixed Precision (AMP FP16).
-* **`exp/dinov2-spatial-visual-tokens-cross-attn`**: Sử dụng DINOv2 ViT visual backbone tự giám sát từ Meta.
-* **`exp/spatial-visual-tokens-cross-attn`**: Lưới $196$ spatial visual tokens ($14 \times 14$) cross-attending với $6$ audio tokens.
-* **`exp/midframe-to-audio-cross-attn`**: Baseline Cross-Attention ($Q=1$ global video token, $K,V=6$ audio tokens).
-
----
-
-## 🚀 Hướng dẫn Nhanh Khởi chạy Thử nghiệm
-
-Xem hướng dẫn chi tiết từng bước cho môi trường Marimo Cloud tại:  
-👉 [`src/README_MARIMO.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/src/README_MARIMO.md)  
-👉 [`src/CONFIG_GUIDE.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/src/CONFIG_GUIDE.md)
-
-Lệnh chạy chính:
 ```bash
 cd src
-python -m pip install -r requirements.txt
 python main.py
 ```
+
+## 🛠️ Key Features
+1. **Pre-Emphasis Filter ($\alpha=0.97$)**: Amplifies high-frequency acoustic splash signals ($2\text{ kHz} - 8\text{ kHz}$) and attenuates low-frequency motor noise ($0 - 500\text{ Hz}$).
+2. **Raw STFT 2049 Bins (No Mel, No RGB)**: Computes high-resolution $2049$ frequency bins ($\Delta f = 62.5\text{ Hz}$) using Hamming windowing ($4096, 2048$), feeding raw float32 magnitude tensors directly to Conv2d layers.
+3. **Frequency-Domain Attention (F-Attention)**: Profiles temporal energy via `Mean` & `Std` across 2049 frequency bins, learning adaptive spectral attention weights $\mathbf{a}_F \in [0, 1]^{2049}$.
+4. **Depthwise-Separable Audio CNN**: Uses early strided convolution (`stride=(4, 2)`) to shrink frequency dimensions $2049 \rightarrow 513$ instantly, followed by depthwise-separable blocks to extract a 256d audio feature vector (~1.4M params).
+5. **Factorized Bilinear Gated Fusion (FBGF / GMF)**: Fuses 256d Audio with MobileNetV2 Video features using low-rank Multi-level Factorized Bilinear pooling ($k=3$), power & L2 normalization, and dynamic gated routing.
+6. **Optimized DataLoader**: Uses `cache_audio: true`, `video_cache_mode: "ram"`, `pin_memory = True`, `persistent_workers = True`, and dynamic worker calculation `num_workers = max_cpu_cores // 2 + 1`.
