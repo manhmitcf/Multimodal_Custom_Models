@@ -129,7 +129,7 @@ class MultimodalTrainer:
                 writer.writerow(row)
                 h_file.flush()
 
-                logger.info(f"Epoch {epoch:03d}/{self.config.training.epochs:03d} | Train F1: {train_f1:.4f} | Val F1: {val_f1:.4f} (Best: {max(best_val_f1, val_f1):.4f})")
+                logger.info(f"Epoch {epoch:03d}/{self.config.training.epochs:03d} | Train Loss: {train_loss:.4f} | Train F1: {train_f1:.4f} | Val Loss: {val_loss:.4f} | Val F1: {val_f1:.4f} (Best: {max(best_val_f1, val_f1):.4f})")
 
                 if val_f1 > best_val_f1:
                     best_val_f1 = val_f1
@@ -191,6 +191,7 @@ class MultimodalTrainer:
         return test_metrics
 
     def _train_epoch(self, dataloader: DataLoader, epoch: int = 1) -> tuple[float, float, float]:
+        import sys
         from tqdm import tqdm
 
         self.model.train()
@@ -198,7 +199,8 @@ class MultimodalTrainer:
         all_preds = []
         all_labels = []
 
-        for batch in tqdm(dataloader, desc=f"Epoch {epoch:03d} Training", leave=False, unit="batch"):
+        disable_progress = not sys.stdout.isatty()
+        for batch in tqdm(dataloader, desc=f"Epoch {epoch:03d} Training", leave=False, unit="batch", disable=disable_progress):
             waveforms = batch["waveform"].to(self.device, non_blocking=True)
             images = batch["image"].to(self.device, non_blocking=True)
             labels = batch["label"].to(self.device, non_blocking=True)
@@ -219,6 +221,7 @@ class MultimodalTrainer:
         return avg_loss, acc, f1
 
     def _evaluate(self, dataloader: DataLoader, desc: str = "Evaluating") -> tuple[float, float, float, np.ndarray]:
+        import sys
         from tqdm import tqdm
 
         self.model.eval()
@@ -226,8 +229,9 @@ class MultimodalTrainer:
         all_preds = []
         all_labels = []
 
+        disable_progress = not sys.stdout.isatty()
         with torch.no_grad():
-            for batch in tqdm(dataloader, desc=desc, leave=False, unit="batch"):
+            for batch in tqdm(dataloader, desc=desc, leave=False, unit="batch", disable=disable_progress):
                 waveforms = batch["waveform"].to(self.device, non_blocking=True)
                 images = batch["image"].to(self.device, non_blocking=True)
                 labels = batch["label"].to(self.device, non_blocking=True)

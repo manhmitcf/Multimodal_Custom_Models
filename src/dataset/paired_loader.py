@@ -124,7 +124,9 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
             self._preload_ram_cache()
 
     def _preload_ram_cache(self) -> None:
-        for idx in tqdm(range(len(self.records)), desc=f"Preloading '{self.split}' split into RAM", unit="sample"):
+        import sys
+        disable_progress = not sys.stdout.isatty()
+        for idx in tqdm(range(len(self.records)), desc=f"Preloading '{self.split}' split into RAM", unit="sample", disable=disable_progress):
             rec = self.records[idx]
             if self.cache_audio_enabled and idx not in self.audio_cache:
                 self.audio_cache[idx] = self._load_audio(rec["audio_path"])
