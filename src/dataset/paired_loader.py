@@ -1,4 +1,4 @@
-"""Pure, High-Performance Paired Dataset for STFT 256k Audio Waveforms and Video RGB Frames with 100% Float32 Precision."""
+"""Pure, High-Performance Paired Dataset for STFT 256k Audio Waveforms and Video RGB Frames."""
 
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ def build_video_transforms(split: str = "train", image_size: int = 224) -> trans
 
 
 class SourcePairedDataset(Dataset[dict[str, Any]]):
-    """Pure Paired Dataset loading 256k Raw Audio Waveforms and RGB Frames with 100% Float32 Precision."""
+    """RAM-Optimized Paired Dataset with Fast PIL RAM Image Caching for Ultra-Fast Training."""
 
     def __init__(self, config: RunConfig, split: str) -> None:
         super().__init__()
@@ -117,10 +117,10 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
         self.cache_video_enabled = config.data.video_cache_mode == "ram"
 
         self.audio_cache: dict[int, Tensor] = {}
-        self.video_cache: dict[int, Tensor] = {}
+        self.video_cache: dict[int, Image.Image] = {}
 
         if self.cache_audio_enabled or self.cache_video_enabled:
-            logger.info(f"Preloading '{split}' split dataset into RAM (audio_cache_float32={self.cache_audio_enabled}, video_cache_tensor={self.cache_video_enabled})...")
+            logger.info(f"Preloading '{split}' split dataset into RAM (audio_cache={self.cache_audio_enabled}, video_cache={self.cache_video_enabled})...")
             self._preload_ram_cache()
 
     def _preload_ram_cache(self) -> None:
@@ -132,7 +132,7 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
             if self.cache_audio_enabled and idx not in self.audio_cache:
                 self.audio_cache[idx] = self._load_audio(rec["audio_path"])
             if self.cache_video_enabled and idx not in self.video_cache:
-                self.video_cache[idx] = self._load_video(rec["video_path"])
+                self.video_cache[idx] = self._load_video_pil(rec["video_path"])
 
     def _load_audio(self, rel_path: str) -> Tensor:
         sample_id = Path(rel_path).stem
@@ -165,32 +165,31 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
 
         return waveform.to(dtype=torch.float32)
 
-    def _load_video(self, rel_path: str) -> Tensor:
+    def _load_video_pil(self, rel_path: str) -> Image.Image:
         import cv2
 
         video_file = resolve_dataset_file(self.dataset_base_dir, rel_path)
         try:
             if video_file.is_file() and video_file.suffix.lower() in (".png", ".jpg", ".jpeg"):
-                img = Image.open(video_file).convert("RGB")
-            else:
-                cap = cv2.VideoCapture(str(video_file))
-                if cap.isOpened():
-                    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                    frame_idx = max(frame_count // 2, 0)
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-                    ret, frame = cap.read()
-                    cap.release()
-                    if ret and frame is not None:
-                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        img = Image.fromarray(frame_rgb)
-                    else:
-                        img = Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
-                else:
-                    img = Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
-            return self.transform(img)
+                return Image.open(video_file).convert("RGB")
+            
+            cap = cv2.VideoCapture(str(video_file))
+            if cap.isOpened():
+                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                frame_idx = max(frame_count // 2, 0)
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                cap.release()
+                if ret and frame is not None:
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    return Image.fromarray(frame_rgb)
+            return Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
         except Exception:
-            img = Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
-            return self.transform(img)
+            return Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
+
+    def _load_video(self, rel_path: str) -> Tensor:
+        img_pil = self._load_video_pil(rel_path)
+        return self.transform(img_pil)
 
     def __len__(self) -> int:
         return len(self.records)
@@ -205,7 +204,7 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
             waveform = self._load_audio(rec["audio_path"])
 
         if self.cache_video_enabled and index in self.video_cache:
-            image = self.video_cache[index]
+            image = self.transform(self.video_cache[index])
         else:
             image = self._load_video(rec["video_path"])
 
