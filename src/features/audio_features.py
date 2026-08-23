@@ -95,9 +95,9 @@ class FrequencyDomainAttention(nn.Module):
         batch, channels, freq, time = spectrogram.shape
 
         # 1. Temporal Energy Profiling: Mean and Std along Time Axis
-        freq_mean = spectrogram.mean(dim=-1).squeeze(1) # [B, 2049]
+        freq_mean = spectrogram.mean(dim=-1).view(batch, freq) # [B, 2049]
         if self.use_std:
-            freq_std = spectrogram.std(dim=-1).squeeze(1) # [B, 2049]
+            freq_std = spectrogram.std(dim=-1).view(batch, freq) # [B, 2049]
             freq_profile = torch.cat([freq_mean, freq_std], dim=1) # [B, 4098]
         else:
             freq_profile = freq_mean
