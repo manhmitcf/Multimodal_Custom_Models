@@ -160,7 +160,7 @@ def build_source_encoders(config: RunConfig) -> tuple[SourceAudioTokenEncoder, S
         mel_bins=128,
         fmin=1,
         fmax=32000,
-        time_drop_width=64,
+        time_drop_width=16,
         time_stripes_num=2,
         freq_drop_width=8,
         freq_stripes_num=2,
