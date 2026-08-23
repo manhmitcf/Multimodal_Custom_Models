@@ -68,7 +68,8 @@ class MultimodalTrainer:
                 shutil.copy(src_file, self.splits_dir / f"{split}.csv")
 
     def _build_dataloader(self, dataset: SourcePairedDataset, shuffle: bool) -> DataLoader:
-        num_workers = resolve_num_workers(self.config.data.num_workers)
+        is_ram_cached = getattr(dataset, "cache_audio_enabled", False) and getattr(dataset, "cache_video_enabled", False)
+        num_workers = resolve_num_workers(self.config.data.num_workers, is_ram_cached=is_ram_cached)
         use_persistent = num_workers > 0
         use_pin = torch.cuda.is_available()
 

@@ -22,8 +22,10 @@ from settings import RunConfig
 logger = logging.getLogger(__name__)
 
 
-def resolve_num_workers(config_num_workers: int) -> int:
-    """Calculate optimal num_workers. If config_num_workers <= 0, use max_cpu_cores // 2 + 1."""
+def resolve_num_workers(config_num_workers: int, is_ram_cached: bool = False) -> int:
+    """Calculate optimal num_workers. If dataset is RAM cached, num_workers=0 avoids pickling 55GB dataset across workers."""
+    if is_ram_cached:
+        return 0
     if config_num_workers <= 0:
         max_cores = os.cpu_count() or 4
         return (max_cores // 2) + 1
