@@ -350,9 +350,22 @@ class StftPannsMobileNetMultimodalModel(nn.Module):
         self.configure_encoder_mode()
 
     def configure_encoder_mode(self) -> None:
-        for encoder in (self.audio_panns_encoder, self.video_mobilenet_encoder):
-            for parameter in encoder.parameters():
-                parameter.requires_grad = False
+        # Unfreeze ALL parameters of Audio Encoder (PANNS CNN6) for continuous fine-tuning
+        for parameter in self.audio_panns_encoder.parameters():
+            parameter.requires_grad = True
+
+        # Freeze ALL parameters of Video Encoder (MobileNetV2) completely
+        for parameter in self.video_mobilenet_encoder.parameters():
+            parameter.requires_grad = False
+
+    def train(self, mode: bool = True) -> StftPannsMobileNetMultimodalModel:
+        super().train(mode)
+        if mode:
+            # Audio encoder in train mode for fine-tuning
+            self.audio_panns_encoder.train()
+            # Video encoder strictly in eval mode
+            self.video_mobilenet_encoder.eval()
+        return self
 
     def forward(self, waveforms: Tensor, images: Tensor, return_attention: bool = False) -> Tensor | tuple[Tensor, Tensor]:
         # 1. PANNS CNN6 Audio Tokens [B, 6, 512]
