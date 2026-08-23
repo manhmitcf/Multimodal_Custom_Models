@@ -20,8 +20,8 @@
   },
   "data": {
     "split_dir": "../checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/splits",
-    "cache_audio": true,
-    "video_cache_mode": "ram",
+    "cache_audio": false,
+    "video_cache_mode": "disk",
     "num_workers": -1,
     "image_size": 224
   },
