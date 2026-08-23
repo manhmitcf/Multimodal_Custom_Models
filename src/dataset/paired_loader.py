@@ -15,6 +15,7 @@ from PIL import Image
 from torch import Tensor
 from torch.utils.data import Dataset
 from torchvision import transforms
+from tqdm import tqdm
 
 from settings import RunConfig
 
@@ -122,8 +123,7 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
             logger.info(f"Preloading '{split}' split dataset into RAM (audio_cache={self.cache_audio_enabled}, video_cache={self.cache_video_enabled})...")
             self._preload_ram_cache()
 
-        from tqdm import tqdm
-
+    def _preload_ram_cache(self) -> None:
         for idx in tqdm(range(len(self.records)), desc=f"Preloading '{self.split}' split into RAM", unit="sample"):
             rec = self.records[idx]
             if self.cache_audio_enabled and idx not in self.audio_cache:
