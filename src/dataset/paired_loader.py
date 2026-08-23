@@ -127,13 +127,20 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
     def _preload_ram_cache(self) -> None:
         import sys
 
+        total_samples = len(self.records)
         disable_progress = not sys.stdout.isatty()
-        for idx in tqdm(range(len(self.records)), desc=f"Preloading '{self.split}' split into RAM", unit="sample", disable=disable_progress):
+        for idx in tqdm(range(total_samples), desc=f"Preloading '{self.split}' split into RAM", unit="sample", disable=disable_progress):
             rec = self.records[idx]
             if self.cache_audio_enabled and idx not in self.audio_cache:
                 self.audio_cache[idx] = self._load_audio(rec["audio_path"])
             if self.cache_video_enabled and idx not in self.video_cache:
                 self.video_cache[idx] = self._load_video_pil(rec["video_path"], idx)
+
+            if disable_progress and (idx + 1) % 5000 == 0:
+                logger.info(f"Preloading '{self.split}' split: {idx + 1}/{total_samples} samples cached into RAM...")
+
+        if disable_progress:
+            logger.info(f"Preloading '{self.split}' split complete! Total cached: {len(self.video_cache)} video frames.")
 
     def _load_audio(self, rel_path: str) -> Tensor:
         sample_id = Path(rel_path).stem
