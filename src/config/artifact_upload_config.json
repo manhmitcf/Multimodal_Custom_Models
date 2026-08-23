@@ -1,9 +1,0 @@
-{
-  "enabled": true,
-  "source_dir": "checkpoint",
-  "zip_path": "checkpoint/STFT256k_PANNS_MobileNetV2_Artifacts.zip",
-  "repo_id": "manhmitcf/fish_result",
-  "repo_type": "dataset",
-  "path_in_repo": "STFT256k_PANNS_MobileNetV2_Artifacts.zip",
-  "create_repo": true
-}
