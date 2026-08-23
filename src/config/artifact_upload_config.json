@@ -1,9 +1,9 @@
 {
   "enabled": true,
   "source_dir": "checkpoint",
-  "zip_path": "checkpoint/GW_AVF_Multimodal_Artifacts.zip",
+  "zip_path": "checkpoint/STFT_Swin_MobileNet_Artifacts.zip",
   "repo_id": "manhmitcf/fish_result",
   "repo_type": "dataset",
-  "path_in_repo": "GW_AVF_Multimodal_Artifacts.zip",
+  "path_in_repo": "STFT_Swin_MobileNet_Artifacts.zip",
   "create_repo": true
 }

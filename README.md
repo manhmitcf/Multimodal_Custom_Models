@@ -17,7 +17,8 @@ Hệ thống nghiên cứu & xây dựng các mô hình AI Đa thức (**Multimo
 
 ## 🌿 Danh sách các Nhánh Thí nghiệm (Branches)
 
-* **`exp/geometry-water-ripple-cross-attn`** *(Nhánh hiện tại - Phương pháp 3)*: Tự động trích xuất đặc trưng **Sóng nước (Water Ripples)** & **Mật độ hình học đàn cá (Delaunay Flocking Geometry)** kết hợp với Cross-Attention Audio-Visual. Tự động nén & đẩy toàn bộ artifacts lên Hugging Face Dataset **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.
+* **`exp/stft2db-image-swintiny-mobilenetv2-cross-attn`** *(Nhánh hiện tại)*: Biến đổi âm thanh $2$s thành **Ảnh phổ STFT-dB ($224 \times 224$)**, sử dụng **SwinTiny** trích xuất đặc trưng phổ ($196$ tokens) kết hợp với kênh Video sử dụng **MobileNetV2** siêu nhẹ (~3.5M params).
+* **`exp/geometry-water-ripple-cross-attn`** *(Phương pháp 3)*: Tự động trích xuất đặc trưng **Sóng nước (Water Ripples)** & **Mật độ hình học đàn cá (Delaunay Flocking Geometry)** kết hợp với Cross-Attention Audio-Visual.
 * **`exp/robust-bilinear-pooling-modality-dropout`** *(Phương pháp 4)*: Kết hợp **Multi-level Factorized Bilinear Pooling (MFB)** & **Modality Dropout** chống mất/nhiễu kênh tín hiệu.
 * **`exp/swin-tiny-ibot-spatial-pretrain`**: Pretraining tự giám sát iBOT SSL trên khung hình giữa của tập train không nhãn.
 * **`exp/stft256k-spatial-video-cross-attn`**: Biến đổi kênh âm thanh 256k STFT high-res tokens + Automatic Mixed Precision (AMP FP16).

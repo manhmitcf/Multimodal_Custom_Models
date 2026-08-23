@@ -20,7 +20,7 @@
     "image_size": 224
   },
   "model": {
-    "video_backbone": "swin_tiny",
+    "video_backbone": "mobilenet_v2",
     "encoder_mode": "frozen",
     "d_model": 256,
     "num_heads": 4,
@@ -40,7 +40,7 @@
     "enabled": true,
     "repo_id": "manhmitcf/fish_result",
     "repo_type": "dataset",
-    "path_prefix": "geometry_water_ripple_cross_attn",
+    "path_prefix": "stft2db_swintiny_mobilenetv2",
     "create_repo": true
   }
 }

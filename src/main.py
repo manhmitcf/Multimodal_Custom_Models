@@ -1,4 +1,4 @@
-"""Method 3 (GW-AVF) & Multimodal entry point: train, select by validation, then test holdout."""
+"""STFT dB Image SwinTiny (Audio) + MobileNetV2 (Video) Multimodal Fusion Entry Point."""
 
 from __future__ import annotations
 
@@ -13,9 +13,9 @@ from torch.utils.data import DataLoader
 
 from config.artifact_upload_config import ArtifactUploadConfig
 from dataset.paired_loader import SourcePairedDataset, SourceUnlabeledVideoDataset, paired_collate, unlabeled_video_collate
-from models.fusion_model import GeometryRippleMultimodalModel, SwinSpatialMultimodal
-from models.ibot_pretraining import SwinIbotPretrainer
-from models.source_encoders import build_source_encoders
+from models.fusion_model import StftSwinMobileNetMultimodalModel
+from models.source_encoders import build_source_encoders, SourceSwinSpatialEncoder, SourceVideoFeatureEncoder
+from models.reference_bridge import load_video_reference
 from settings import RunConfig
 from tasks.ibot_trainer import IbotTrainer
 from tasks.trainer import MultimodalTrainer
@@ -27,18 +27,12 @@ UPLOAD_CONFIG_PATH = Path(__file__).parent / "config" / "artifact_upload_config.
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run GW-AVF Geometry Water-Ripple Cross-Attention & Multimodal Fusion.")
+    parser = argparse.ArgumentParser(description="Run STFT-dB Image SwinTiny (Audio) + MobileNetV2 (Video) Multimodal Fusion.")
     parser.add_argument(
         "--config",
         type=Path,
         default=CONFIG_PATH,
         help="Path to a training JSON file. Defaults to config/train_config.json.",
-    )
-    parser.add_argument(
-        "--use-geometry-ripple",
-        action="store_true",
-        default=True,
-        help="Enable Method 3 (GW-AVF) Geometry & Water-Ripple feature enrichment.",
     )
     return parser.parse_args()
 
@@ -64,51 +58,34 @@ def main() -> None:
     torch.manual_seed(config.training.seed)
     device = resolve_device(config.training.device)
 
-    audio_encoder, video_encoder = build_source_encoders(config)
+    # Load SwinTiny for Audio STFT dB Image Branch & MobileNetV2 for Video Branch
+    video_ref = load_video_reference(config.references.video_repo)
+    
+    # 1. SwinTiny Backbone for Audio STFT-dB Spectrogram Image
+    swin_inner = video_ref.FishVideoDataLoader.build_model("swin_tiny")
+    swin_ckpt = config.references.video_repo.parent / "checkpoints/SwinTiny_holdout_random_sample_20260729_153012/DL_video/checkpoint/swin_tiny/video_best.pt"
+    if swin_ckpt.exists():
+        ckpt = torch.load(swin_ckpt, map_location="cpu", weights_only=False)
+        swin_inner.load_state_dict(ckpt["model_state_dict"], strict=True)
+    audio_swin_encoder = SourceSwinSpatialEncoder(swin_inner)
 
-    if config.ibot_pretraining.enabled:
-        unlabeled_loader = DataLoader(
-            SourceUnlabeledVideoDataset(config),
-            batch_size=config.ibot_pretraining.batch_size,
-            shuffle=True,
-            num_workers=paired_loader_workers(),
-            pin_memory=torch.cuda.is_available(),
-            collate_fn=unlabeled_video_collate,
-        )
-        ibot_pretrainer = SwinIbotPretrainer(video_encoder, config.ibot_pretraining).to(device)
-        ibot_trainer = IbotTrainer(
-            ibot_pretrainer,
-            unlabeled_loader,
-            device,
-            config.ibot_pretraining.output_dir,
-        )
-        ibot_trainer.fit(config.ibot_pretraining.epochs)
-        video_encoder = ibot_pretrainer.student_encoder
-        del ibot_trainer
-        del ibot_pretrainer
-        del unlabeled_loader
-        gc.collect()
-        if device.type == "cuda":
-            torch.cuda.empty_cache()
+    # 2. MobileNetV2 Backbone for Middle RGB Video Frame
+    mobilenet_inner = video_ref.FishVideoDataLoader.build_model("mobilenet_v2")
+    mobilenet_ckpt = config.references.video_repo.parent / "checkpoints/MobileNetV2_holdout_random_sample_20260729_153012/DL_video/checkpoint/mobilenet_v2/video_best.pt"
+    if mobilenet_ckpt.exists():
+        ckpt = torch.load(mobilenet_ckpt, map_location="cpu", weights_only=False)
+        mobilenet_inner.load_state_dict(ckpt["model_state_dict"], strict=True)
+    video_mobilenet_encoder = SourceVideoFeatureEncoder(mobilenet_inner, "mobilenet_v2")
 
-    if args.use_geometry_ripple:
-        model = GeometryRippleMultimodalModel(
-            audio_encoder,
-            video_encoder,
-            d_model=config.model.d_model,
-            num_heads=config.model.num_heads,
-            encoder_mode=config.model.encoder_mode,
-            dropout=config.model.dropout,
-        ).to(device)
-    else:
-        model = SwinSpatialMultimodal(
-            audio_encoder,
-            video_encoder,
-            d_model=config.model.d_model,
-            num_heads=config.model.num_heads,
-            encoder_mode=config.model.encoder_mode,
-            dropout=config.model.dropout,
-        ).to(device)
+    # 3. Instantiate STFT dB Swin-MobileNet Multimodal Model
+    model = StftSwinMobileNetMultimodalModel(
+        audio_swin_encoder=audio_swin_encoder.to(device),
+        video_mobilenet_encoder=video_mobilenet_encoder.to(device),
+        d_model=config.model.d_model,
+        num_heads=config.model.num_heads,
+        encoder_mode=config.model.encoder_mode,
+        dropout=config.model.dropout,
+    ).to(device)
 
     loaders = {
         split: DataLoader(

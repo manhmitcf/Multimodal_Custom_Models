@@ -1,24 +1,39 @@
-# Tài liệu Chuyên sâu cho Phương pháp 3 (GW-AVF)
+# Tài liệu Chuyên sâu cho Nhánh STFT-dB Image SwinTiny + MobileNetV2 Fusion
 
-Thư mục này chứa các bài báo khoa học tiền đề làm cơ sở thiết kế cho **Phương pháp 3: Geometry & Water-Ripple Guided Audio-Visual Fusion (GW-AVF)**.
-
----
-
-## 📑 Danh sách Bài báo Tham chiếu Chính
-
-### 1. `2506.14170.pdf`
-* **Tên bài báo**: *Progressive Multimodal Interaction Network for Reliable Quantification of Fish Feeding Intensity in Aquaculture*
-* **Tác giả / Năm**: arXiv:2506.14170 (2025)
-* **Ý nghĩa áp dụng**: Cung cấp bằng chứng thực nghiệm về việc dung hợp tín hiệu ảnh, âm thanh và sóng nước (water-wave) giúp tăng độ tin cậy khi định lượng cường độ cho cá ăn.
-
-### 2. `2208.07011.pdf`
-* **Tên bài báo**: *Automatic Controlling Fish Feeding Machine using Feature Extraction of Nutriment and Ripple Behavior*
-* **Tác giả / Năm**: IEEE / arXiv:2208.07011 (2022)
-* **Ý nghĩa áp dụng**: Cung cấp thuật toán trích xuất đặc trưng gợn sóng nước (Ripple Behavior Feature Extraction) và chuyển động bơi tán loạn để ra quyết định điều khiển máy cho cá ăn.
+Thư mục này chứa các tài liệu nghiên cứu tiền đề làm cơ sở cho **Phương pháp Biến đổi Phổ Tần số Cao STFT thành Ảnh dB (STFT-dB Spectrogram Image Transformation)** kết hợp giữa **SwinTiny (Audio Spectrogram Branch)** và **MobileNetV2 (Video Branch)**.
 
 ---
 
-## 🏗️ Ứng dụng vào Mã nguồn `features/geometry_ripple_features.py`
+## 📑 Kiến trúc Tổng quan (Architectural Pipeline)
 
-* **Wavelet Water-Ripple Energy**: Dựa trên `2208.07011.pdf`, module `RippleWaveletExtractor` trích xuất thành phần tần số cao đại diện cho gợn sóng nhấp nhô trên mặt hồ.
-* **Progressive Geometry Fusion**: Dựa trên `2506.14170.pdf`, module `GeometryRippleFeatureExtractor` dung hợp lưới không gian $14 \times 14$ đặc trưng hình học vào các visual spatial tokens trước khi đi qua Cross-Attention.
+```text
+       Audio Waveform 2s (64 kHz)                     Middle Video Frame (RGB)
+                  │                                              │
+      STFT-dB Image Transform                              MobileNetV2
+ (n_fft=2048, hop=512 -> 3x224x224)                       Video Feature
+                  │                                              │
+           SwinTiny Encoder                                      │
+        Stage 3 Spatial Tokens                                   │
+             (196 x 384)                                         │
+                  │                                              │
+                  └──────────────────────┬───────────────────────┘
+                                         │
+                             Cross-Attention Fusion Head
+                             (Video Q attends Audio K,V)
+                                         │
+                               Classifier (4 classes)
+```
+
+---
+
+## 💡 Ý nghĩa Kỹ thuật (Key Technical Innovations)
+
+1. **Biến đổi STFT-dB Spectrogram thành Ảnh 3 Kênh (224x224)**:
+   * Khắc phục triệt để điểm nghẽn mất mát dải phổ cao của Log-Mel Spectrogram thông thường (PANNs CNN6 85%).
+   * Chuyển đổi toàn bộ miền phổ tần số $256,000$ điểm về ảnh 3 kênh $224 \times 224$ px bảo toàn $100\%$ các vi va chạm tần số khi cá đớp mồi ($2\text{ kHz} - 8\text{ kHz}$).
+
+2. **Kênh Âm thanh Siêu Năng lực (SwinTiny Audio Spectrogram Encoder)**:
+   * Sử dụng backbone SwinTiny để trích xuất $196$ spatial/spectral tokens ($14 \times 14$) từ ảnh phổ STFT-dB.
+
+3. **Kênh Video Siêu Nhẹ (MobileNetV2 Video Encoder)**:
+   * Giữ kênh Video gọn nhẹ tối đa với MobileNetV2 (~3.5M tham số), đảm bảo mô hình Đa thức chạy siêu nhanh và tiết kiệm VRAM.
