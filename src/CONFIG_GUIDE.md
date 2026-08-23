@@ -1,63 +1,96 @@
-# 📘 HƯỚNG DẪN CHI TIẾT CÁC THAM SỐ CẤU HÌNH (CONFIG GUIDE)
+# Hướng dẫn Chi tiết Cấu hình File JSON (CONFIG_GUIDE)
 
-Mọi thử nghiệm trong hệ thống được điều khiển bởi 2 file cấu hình chính nằm tại `src/config/`:
-1. `src/config/train_config.json`: File siêu tham số huấn luyện và kiến trúc mô hình.
-2. `src/config/artifact_upload_config.json`: File cấu hình tự động tải kết quả lên Hugging Face.
+Tài liệu này giải thích chi tiết ý nghĩa từng thông số trong file cấu hình JSON [`config/train_config.json`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/src/config/train_config.json) và [`config/artifact_upload_config.json`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/src/config/artifact_upload_config.json), giúp bạn dễ dàng chỉnh sửa và tùy biến cho các kịch bản thử nghiệm khác nhau.
 
 ---
 
-## ⚙️ 1. CHI TIẾT TỪNG PHÂN ĐOẠN TRONG `train_config.json`
+## 📄 1. File Cấu hình Chính: `config/train_config.json`
 
-### 1.1 Khối Siêu tham số STFT (`stft`)
-| Tham số | Giá trị Mặc định | Giải thích Chi tiết |
-| :--- | :--- | :--- |
-| **`sr`** | `256000` | Tần số lấy mẫu âm thanh cao cấp 256 kHz (256,000 samples/sec). Giữ nguyên 100% tín hiệu siêu âm cá đớp mồi. |
-| **`pre_emphasis`** | `0.97` | Hệ số lọc thông cao $y[t] = x[t] - 0.97 \cdot x[t-1]$. Khuếch đại tần số cao ($2-8\text{kHz}$) và dập nhiễu quạt ($0-500\text{Hz}$). |
-| **`frame_length`** | `4096` | Độ dài cửa sổ lấy mẫu STFT (win_length = 4096 mẫu). |
-| **`hop_length`** | `2048` | Bước nhảy cửa sổ STFT (hop_length = 2048 mẫu). |
-| **`n_fft`** | `4096` | Số điểm biến đổi Fourier (n_fft = 4096), tạo ra ma trận $2049$ dải tần số sắc nét ($\Delta f = 62.5\text{ Hz/bin}$). |
-| **`windowing`** | `"hamming"` | Loại cửa sổ biến đổi. Cửa sổ Hamming nén nhiễu nón phụ (side lobes) tốt hơn cửa sổ Hann truyền thống. |
-| **`use_std`** | `true` | Khi `true`, cơ chế F-Attention kết hợp cả năng lượng trung bình `Mean` và độ biến thiên `Std` trên 2049 dải tần số. |
+File cấu hình được chia thành 6 khối thông số chính:
 
----
+```json
+{
+  "stft": { ... },
+  "references": { ... },
+  "checkpoints": { ... },
+  "data": { ... },
+  "model": { ... },
+  "training": { ... },
+  "results_upload": { ... }
+}
+```
 
-### 1.2 Khối Cấu hình Mô hình (`model`)
-| Tham số | Giá trị Mặc định | Giải thích Chi tiết |
-| :--- | :--- | :--- |
-| **`video_backbone`** | `"mobilenet_v2"` | Kiến trúc backbone trích xuất đặc trưng hình ảnh (MobileNetV2 ~3.5M params). |
-| **`encoder_mode`** | `"tune"` | `"tune"`: Cho phép fine-tune cập nhật trọng số MobileNetV2; `"freeze"`: Khóa đóng đóng băng trọng số. |
-| **`d_model`** | `256` | Kích thước không gian vector đặc trưng chung (Audio & Video projection dimension = 256d). |
-| **`dropout`** | `0.1` | Tỷ lệ dropout chống overfitting trong classifier. |
-| **`fusion_type`** | `"fbgf"` | `"fbgf"`: Factorized Bilinear Gated Fusion (MFB $k=3$ + Dynamic Gate); `"gmf"`: Pure Gated Multimodal Fusion. |
-
----
-
-### 1.3 Khối Cấu hình Dữ liệu & DataLoader (`data`)
-| Tham số | Giá trị Mặc định | Giải thích Chi tiết |
-| :--- | :--- | :--- |
-| **`split_dir`** | `"../checkpoints/.../splits"` | Đường dẫn tới thư mục chứa 3 file CSV phân chia dữ liệu cố định `train.csv`, `val.csv`, `test.csv`. |
-| **`cache_audio`** | `true` | Bật cache nạp toàn bộ sóng âm 256k vào bộ nhớ RAM ở phút đầu tiên. |
-| **`video_cache_mode`** | `"ram"` | `"ram"`: Cache ảnh RGB $224 \times 224$ vào RAM; `"disk"`: Đọc trực tiếp từ đĩa. |
-| **`num_workers`** | `-1` | Số lượng worker loader. Khi `-1`, hệ thống tự động tính: `num_workers = (max_cpu_cores // 2) + 1`. |
-| **`image_size`** | `224` | Kích thước ảnh RGB đầu vào ($224 \times 224$). |
+### 🔹 Khối `stft` (Siêu tham số Lọc & Phép biến đổi STFT 256k)
+* **`sr`**: `256000` (Tần số lấy mẫu âm thanh 256 kHz). Giữ nguyên 100% các dải tần số cao $2\text{ kHz} - 8\text{ kHz}$ của vi xung cá đớp mồi.
+* **`pre_emphasis`**: `0.97` (Hệ số lọc thông cao $y[t] = x[t] - 0.97 \cdot x[t-1]$). Khuếch đại vi xung tần số cao và dập nén tần số quạt nước $0-500\text{ Hz}$.
+* **`frame_length`**: `4096` (Độ dài cửa sổ lấy mẫu win_length = 4096 mẫu).
+* **`hop_length`**: `2048` (Bước nhảy cửa sổ hop_length = 2048 mẫu).
+* **`n_fft`**: `4096` (Số điểm FFT n_fft = 4096), tạo ra ma trận $2049$ dải tần số sắc nét ($\Delta f = 62.5\text{ Hz/bin}$).
+* **`windowing`**: `"hamming"` (Cửa sổ Hamming nén nhiễu nón phụ tốt hơn cửa sổ Hann truyền thống).
+* **`use_std`**: `true` (Kết hợp cả năng lượng trung bình `Mean` và độ biến thiên `Std` trên 2049 dải tần trong cơ chế Frequency-Domain Attention).
 
 ---
 
-### 1.4 Khối Cấu hình Huấn luyện (`training`)
-| Tham số | Giá trị Mặc định | Giải thích Chi tiết |
-| :--- | :--- | :--- |
-| **`batch_size`** | `16` | Kích thước batch huấn luyện (batch_size = 16 mẫu/bước). |
-| **`epochs`** | `100` | Tổng số epoch huấn luyện (100 epochs). |
-| **`fusion_learning_rate`**| `0.001` | Tốc độ học cho Audio CNN và Fusion Head ($10^{-3}$). |
-| **`encoder_learning_rate`**| `0.0001` | Tốc độ học cho Pretrained Video Backbone MobileNetV2 ($10^{-4}$). |
-| **`weight_decay`** | `0.0001` | Hệ số suy giảm trọng số L2 regularization ($10^{-4}$). |
-| **`seed`** | `42` | Random seed cố định để đảm bảo kết quả tái lập 100%. |
-| **`device`** | `"auto"` | `"auto"`: Tự động dùng GPU CUDA nếu có, ngược lại dùng CPU. |
-| **`output_dir`** | `"checkpoint"` | Thư mục lưu trữ kết quả đầu ra (`src/checkpoint/`). |
+### 🔹 Khối `references` (Đường dẫn dự án nguồn)
+* **`audio_repo`**: Đường dẫn tương đối/tuyệt đối tới project baseline audio (Ví dụ: `"../U_FFIA27K_audio"`).
+* **`video_repo`**: Đường dẫn tương đối/tuyệt đối tới project baseline video (Ví dụ: `"../U_FFIA27K_video"`).
 
 ---
 
-## ☁️ 2. CHI TIẾT FILE `artifact_upload_config.json`
+### 🔹 Khối `checkpoints` (Trọng số mô hình Pretrained Baseline)
+* **`audio`**: Đường dẫn file trọng số `audio_best.pt` của mô hình Audio (PANNS Cnn6).
+* **`video_by_backbone`**: Từ điển ánh xạ từng loại visual backbone tới file trọng số `video_best.pt` tương ứng:
+  * `"swin_tiny"`: Đường dẫn file `video_best.pt` SwinTiny.
+  * `"densenet121"`: Đường dẫn file `video_best.pt` DenseNet121.
+  * `"efficientnet_b0"`: Đường dẫn file `video_best.pt` EfficientNet-B0.
+  * `"mobilenet_v2"`: Đường dẫn file `video_best.pt` MobileNetV2.
+
+---
+
+### 🔹 Khối `data` (Quản lý Dữ liệu & DataLoader)
+* **`split_dir`**: Đường dẫn thư mục chứa 3 file CSV cố định (`train.csv`, `val.csv`, `test.csv`).
+* **`cache_audio`**: `true` hoặc `false`. Bật/tắt nạp sẵn Audio Waveforms 256k vào bộ nhớ RAM để tăng tốc nạp dữ liệu.
+* **`video_cache_mode`**: `"ram"` (Nạp ảnh RGB $224 \times 224$ vào RAM), `"disk"` (Lưu cache trên đĩa), hoặc `"none"` (Đọc từ đĩa trực tiếp).
+* **`num_workers`**: Số luồng CPU nạp dữ liệu. Đặt `-1` để hệ thống tự động tính: `num_workers = (max_cpu_cores // 2) + 1`.
+* **`image_size`**: Kích thước khung hình đầu vào (Mặc định `224` tương ứng ảnh $224 \times 224$ px).
+
+---
+
+### 🔹 Khối `model` (Kiến trúc Mô hình & Fusion Head)
+* **`video_backbone`**: Chọn tên visual backbone (`"mobilenet_v2"`, `"efficientnet_b0"`, `"densenet121"`, `"swin_tiny"`).
+* **`encoder_mode`**:
+  * `"tune"`: Mở cho phép fine-tune các lớp của Audio CNN & MobileNetV2 Video Encoder với `encoder_learning_rate` nhỏ.
+  * `"frozen"`: Đông đóng toàn bộ tham số của Encoders, chỉ huấn luyện các lớp Fusion Head.
+* **`d_model`**: Số chiều embedding ẩn của không gian đặc trưng chung (Mặc định `256`).
+* **`dropout`**: Tỉ lệ dropout chống overfitting (Mặc định `0.1`).
+* **`fusion_type`**: `"fbgf"` (Factorized Bilinear Gated Fusion MFB $k=3$ + Dynamic Gate) hoặc `"gmf"` (Pure Gated Multimodal Fusion).
+
+---
+
+### 🔹 Khối `training` (Siêu tham số Huấn luyện)
+* **`batch_size`**: Kích thước mẫu theo batch cho huấn luyện (Mặc định `16` hoặc `32`).
+* **`epochs`**: Số epoch tối đa (Mặc định `100`).
+* **`fusion_learning_rate`**: Tốc độ học dành riêng cho Audio CNN và Fusion Head (Mặc định `0.001` / `1e-3`).
+* **`encoder_learning_rate`**: Tốc độ học khi fine-tune Video Backbone MobileNetV2 (Mặc định `0.0001` / `1e-4`).
+* **`weight_decay`**: Hệ số suy giảm trọng số L2 regularization (Mặc định `0.0001`).
+* **`seed`**: Hạt giống ngẫu nhiên để đảm bảo tính tái lập kết quả (Mặc định `42`).
+* **`device`**: `"auto"` (Tự động dùng GPU nếu có, nếu không chuyển CPU), `"cuda"`, hoặc `"cpu"`.
+* **`output_dir`**: Đường dẫn thư mục xuất kết quả checkpoints và logs (Mặc định `"checkpoint"`).
+
+---
+
+### 🔹 Khối `results_upload` (Tự động Đẩy Kết quả lên Hugging Face)
+* **`enabled`**: `true` hoặc `false`.
+* **`repo_id`**: Tên repo trên Hugging Face (Mặc định `"manhmitcf/fish_result"`).
+* **`repo_type`**: Loại repo (Luôn là `"dataset"`).
+* **`path_prefix`**: Tên tiền tố thư mục trên Hugging Face (`"stft256k_raw2049_freqattn_mobilenetv2_fbgf"`).
+* **`create_repo`**: `true` để tự tạo repo trên Hugging Face nếu chưa có.
+
+---
+
+## 📄 2. File Cấu hình Upload Artifact Zip: `config/artifact_upload_config.json`
+
+File này quản lý việc nén **toàn bộ thư mục kết quả** (`checkpoint/`) thành file `.zip` và tải lên Hugging Face:
 
 ```json
 {
@@ -71,6 +104,28 @@ Mọi thử nghiệm trong hệ thống được điều khiển bởi 2 file c�
 }
 ```
 
-* **`enabled: true`**: Cho phép tự động nén zip và tải kết quả lên Hugging Face sau khi `python main.py` chạy xong.
-* **`repo_id`**: Địa chỉ repository trên Hugging Face Datasets (`manhmitcf/fish_result`).
-* **`zip_path`**: Đường dẫn file zip sản phẩm nén.
+---
+
+## 💡 Hướng dẫn Tùy chỉnh Nhanh cho Các Kịch bản Thường gặp
+
+### 1. Nếu bị tràn bộ nhớ GPU (CUDA Out of Memory)
+Hãy chỉnh giảm `batch_size` trong `train_config.json`:
+```json
+"training": {
+  "batch_size": 8
+}
+```
+
+### 2. Chuyển đổi Cơ chế Fusion để chạy Bài báo (Ablation Study)
+Thay đổi `fusion_type` từ `"fbgf"` sang `"gmf"`:
+```json
+"model": {
+  "fusion_type": "gmf"
+}
+```
+
+### 3. Khởi chạy Pipeline
+```bash
+cd src
+python main.py
+```
