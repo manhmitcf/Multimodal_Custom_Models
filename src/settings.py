@@ -133,8 +133,7 @@ class RunConfig:
         model = ModelConfig(**raw["model"])
         checkpoints = raw["checkpoints"]
         video_by_backbone = checkpoints.get("video_by_backbone", {})
-        if model.video_backbone in video_by_backbone:
-            video_checkpoint_value = video_by_backbone[model.video_backbone]
+        video_checkpoint_value = video_by_backbone.get(model.video_backbone, checkpoints["audio"])
         data = DataConfig(
             split_dir=resolve(raw["data"]["split_dir"]),
             cache_audio=bool(raw["data"]["cache_audio"]),
