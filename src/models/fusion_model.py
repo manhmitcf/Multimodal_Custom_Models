@@ -1,4 +1,4 @@
-"""Multimodal & Single-Modality fusion architectures: baseline, spatial, Method 3 GW-AVF, Method 4 R-BPMD, STFT-dB PANNS-MobileNet, and PANNS CNN6 + STFT-dB 256k."""
+"""Multimodal & Single-Modality fusion architectures: baseline, spatial, Method 3 GW-AVF, Method 4 R-BPMD, and STFT 256k PANNS-MobileNet Advanced Fusion."""
 
 from __future__ import annotations
 
@@ -269,15 +269,17 @@ class SwinSpatialMultimodal(nn.Module):
         return (logits, attention) if return_attention else logits
 
 
-class AudioStftPannsOnlyModel(nn.Module):
-    """Single-Modality Audio Model: PANNS CNN6 (unfrozen full fine-tuning) + STFT-dB 256k Spectrogram Features."""
+class StftPannsMobileNetAdvancedFusionHead(nn.Module):
+    """Advanced Multimodal Fusion Head: Spatial Cross-Attention + Factorized Bilinear MFB + Modality Dropout."""
 
-    def __init__(self, audio_panns_encoder: nn.Module, d_model: int = 256, num_heads: int = 4, dropout: float = 0.1) -> None:
+    def __init__(self, audio_dim: int = 512, video_dim: int = 1280, d_model: int = 256, num_heads: int = 4, dropout: float = 0.1, factor_k: int = 3, drop_prob: float = 0.15) -> None:
         super().__init__()
-        self.audio_panns_encoder = audio_panns_encoder
-        self.stft_transform = STFTTodBImageTransform(n_fft=4096, hop_length=2048, win_length=2048, image_size=224)
+        self.d_model = d_model
+        self.factor_k = factor_k
+        self.drop_prob = drop_prob
 
-        self.audio_proj = nn.Linear(audio_panns_encoder.feature_dim, d_model)
+        self.audio_proj = nn.Linear(audio_dim, d_model)
+        self.video_proj = nn.Linear(video_dim, d_model)
         self.stft_conv = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1),
             nn.BatchNorm2d(32),
@@ -290,15 +292,81 @@ class AudioStftPannsOnlyModel(nn.Module):
             nn.Linear(64, d_model),
         )
         self.audio_pos = nn.Parameter(Tensor(1, 6, d_model).normal_(mean=0.0, std=0.02))
-        self.self_attn = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=d_model, nhead=num_heads, dim_feedforward=d_model * 4, dropout=dropout, batch_first=True),
-            num_layers=2,
-        )
+
+        # Spatial Cross-Attention
+        self.cross_attn = nn.MultiheadAttention(d_model, num_heads, dropout=dropout, batch_first=True)
+        self.cross_norm = nn.LayerNorm(d_model)
+
+        # Factorized Bilinear MFB Projections
+        self.mfb_audio_linear = nn.Linear(d_model, d_model * factor_k)
+        self.mfb_video_linear = nn.Linear(d_model, d_model * factor_k)
+        self.mfb_norm = nn.LayerNorm(d_model)
+
         self.classifier = nn.Sequential(
-            nn.Linear(d_model, d_model),
+            nn.Linear(d_model * 2, d_model),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(d_model, 4),
+        )
+
+    def forward(self, audio_tokens: Tensor, video_feature: Tensor, stft_db_img: Tensor) -> tuple[Tensor, Tensor]:
+        # Modality Dropout during training for robust sensor fault tolerance
+        if self.training and self.drop_prob > 0.0:
+            rand_val = torch.rand(1).item()
+            if rand_val < self.drop_prob / 2.0:
+                audio_tokens = torch.zeros_like(audio_tokens)
+                stft_db_img = torch.zeros_like(stft_db_img)
+            elif rand_val < self.drop_prob:
+                video_feature = torch.zeros_like(video_feature)
+
+        # 1. PANNS Audio Tokens: [B, 6, 512] -> [B, 6, d_model]
+        panns_embed = self.audio_proj(audio_tokens) + self.audio_pos
+
+        # 2. STFT dB Image Feature: [B, 3, 224, 224] -> [B, 1, d_model]
+        stft_embed = self.stft_conv(stft_db_img).unsqueeze(1)
+
+        # 3. Combined Audio Representation (6 PANNS tokens + 1 STFT token = 7 tokens)
+        combined_audio = torch.cat([panns_embed, stft_embed], dim=1) # [B, 7, d_model]
+
+        # 4. Video Query: MobileNetV2 [B, 1280] -> [B, 1, d_model]
+        video_embed = self.video_proj(video_feature).unsqueeze(1)
+
+        # 5. Cross Attention: Video Query attends to 7 Audio/STFT Tokens
+        attended, attention = self.cross_attn(video_embed, combined_audio, combined_audio, need_weights=True)
+        fused_video = self.cross_norm(video_embed + attended).squeeze(1) # [B, d_model]
+
+        # 6. Audio Pooled Feature [B, d_model]
+        audio_pooled = combined_audio.mean(dim=1)
+
+        # 7. Factorized Bilinear MFB Hadamard Fusion
+        aud_mfb = self.mfb_audio_linear(audio_pooled) # [B, d_model * factor_k]
+        vid_mfb = self.mfb_video_linear(fused_video)   # [B, d_model * factor_k]
+        mfb_prod = aud_mfb * vid_mfb                  # Hadamard product
+        mfb_pooled = mfb_prod.reshape(-1, self.d_model, self.factor_k).sum(dim=2) # Sum pooling
+        mfb_power = torch.sign(mfb_pooled) * torch.sqrt(torch.abs(mfb_pooled) + 1e-10) # Power norm
+        mfb_out = self.mfb_norm(mfb_power)
+
+        # 8. Concatenate Direct + Bilinear Fused Representations
+        final_repr = torch.cat([fused_video, mfb_out], dim=1)
+        logits = self.classifier(final_repr)
+        return logits, attention
+
+
+class StftPannsMobileNetAdvancedMultimodalModel(nn.Module):
+    """Multimodal Model: Audio (PANNS CNN6 full fine-tune + STFT 256k) + Video (MobileNetV2) + Advanced MFB & Modality Dropout Fusion."""
+
+    def __init__(self, audio_panns_encoder: nn.Module, video_mobilenet_encoder: nn.Module, d_model: int = 256, num_heads: int = 4, encoder_mode: str = "tune_audio_only", dropout: float = 0.1) -> None:
+        super().__init__()
+        self.stft_transform = STFTTodBImageTransform(n_fft=4096, hop_length=2048, win_length=2048, image_size=224)
+        self.audio_panns_encoder = audio_panns_encoder
+        self.video_mobilenet_encoder = video_mobilenet_encoder
+        self.encoder_mode = encoder_mode
+        self.fusion = StftPannsMobileNetAdvancedFusionHead(
+            audio_dim=audio_panns_encoder.feature_dim,
+            video_dim=video_mobilenet_encoder.feature_dim,
+            d_model=d_model,
+            num_heads=num_heads,
+            dropout=dropout,
         )
         self.configure_encoder_mode()
 
@@ -307,26 +375,29 @@ class AudioStftPannsOnlyModel(nn.Module):
         for parameter in self.audio_panns_encoder.parameters():
             parameter.requires_grad = True
 
-    def train(self, mode: bool = True) -> AudioStftPannsOnlyModel:
+        # Freeze ALL parameters of Video Encoder (MobileNetV2) completely
+        for parameter in self.video_mobilenet_encoder.parameters():
+            parameter.requires_grad = False
+
+    def train(self, mode: bool = True) -> StftPannsMobileNetAdvancedMultimodalModel:
         super().train(mode)
         if mode:
+            # Audio encoder in train mode for full fine-tuning
             self.audio_panns_encoder.train()
+            # Video encoder strictly in eval mode
+            self.video_mobilenet_encoder.eval()
         return self
 
-    def forward(self, waveforms: Tensor, images: Tensor = None, return_attention: bool = False) -> Tensor:
-        # 1. PANNS CNN6 Audio Tokens [B, 6, 512] -> [B, 6, d_model]
+    def forward(self, waveforms: Tensor, images: Tensor, return_attention: bool = False) -> Tensor | tuple[Tensor, Tensor]:
+        # 1. PANNS CNN6 Audio Tokens [B, 6, 512]
         audio_tokens = self.audio_panns_encoder(waveforms)
-        panns_embed = self.audio_proj(audio_tokens) + self.audio_pos
 
-        # 2. STFT dB Spectrogram Image [B, 3, 224, 224] -> [B, 1, d_model]
+        # 2. STFT dB Spectrogram Image [B, 3, 224, 224]
         stft_db_img = self.stft_transform(waveforms)
-        stft_embed = self.stft_conv(stft_db_img).unsqueeze(1)
 
-        # 3. Combined Audio Tokens [B, 7, d_model] (6 PANNS tokens + 1 STFT 256k token)
-        combined_audio = torch.cat([panns_embed, stft_embed], dim=1)
+        # 3. MobileNetV2 Video Feature [B, 1280]
+        video_feature = self.video_mobilenet_encoder(images)
 
-        # 4. Self Attention & Pooling
-        attended = self.self_attn(combined_audio)
-        pooled = attended.mean(dim=1)
-        logits = self.classifier(pooled)
-        return logits
+        # 4. Advanced Multimodal Fusion
+        logits, attention = self.fusion(audio_tokens, video_feature, stft_db_img)
+        return (logits, attention) if return_attention else logits

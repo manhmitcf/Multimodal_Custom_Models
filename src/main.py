@@ -1,4 +1,4 @@
-"""Single-Modality Audio Only (PANNS CNN6 Unfrozen + STFT-dB 256k) Entry Point."""
+"""STFT 256k + PANNS CNN6 Full Fine-Tune (Audio) + MobileNetV2 (Video) Advanced Multimodal Fusion Entry Point."""
 
 from __future__ import annotations
 
@@ -13,9 +13,8 @@ from torch.utils.data import DataLoader
 
 from config.artifact_upload_config import ArtifactUploadConfig
 from dataset.paired_loader import SourcePairedDataset, paired_collate
-from models.fusion_model import AudioStftPannsOnlyModel
-from models.source_encoders import SourceAudioTokenEncoder
-from models.reference_bridge import load_audio_reference
+from models.fusion_model import StftPannsMobileNetAdvancedMultimodalModel
+from models.source_encoders import build_source_encoders
 from settings import RunConfig
 from tasks.trainer import MultimodalTrainer
 from utils.huggingface_results import upload_artifact_if_enabled, upload_result_files
@@ -26,7 +25,7 @@ UPLOAD_CONFIG_PATH = Path(__file__).parent / "config" / "artifact_upload_config.
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Single-Modality Audio Only (PANNS CNN6 Unfrozen + STFT-dB 256k).")
+    parser = argparse.ArgumentParser(description="Run STFT 256k + PANNS CNN6 Full Fine-Tune (Audio) + MobileNetV2 (Video) Advanced Multimodal Fusion.")
     parser.add_argument(
         "--config",
         type=Path,
@@ -57,34 +56,16 @@ def main() -> None:
     torch.manual_seed(config.training.seed)
     device = resolve_device(config.training.device)
 
-    # Build PANNS CNN6 Audio Encoder directly using baseline reference
-    audio_ref = load_audio_reference(config.references.audio_repo)
-    frontend_config = audio_ref.AudioFeaturesConfig(
-        sample_rate=64000,
-        window_size=2048,
-        hop_size=1024,
-        mel_bins=128,
-        fmin=1,
-        fmax=32000,
-        time_drop_width=16,
-        time_stripes_num=2,
-        freq_drop_width=8,
-        freq_stripes_num=2,
-    )
-    audio_model = audio_ref.AudioModel(
-        frontend=audio_ref.AudioFrontend(config=frontend_config),
-        backbone=audio_ref.PANNS_Cnn6(classes_num=4),
-    )
-    if config.audio_checkpoint.exists():
-        ckpt = torch.load(config.audio_checkpoint, map_location="cpu", weights_only=False)
-        audio_model.load_state_dict(ckpt["model_state_dict"], strict=True)
-    audio_encoder = SourceAudioTokenEncoder(audio_model)
+    # Build PANNS CNN6 Audio Encoder & MobileNetV2 Video Encoder
+    audio_encoder, video_encoder = build_source_encoders(config)
 
-    # Instantiate Single-Modality PANNS CNN6 + STFT-dB 256k Model
-    model = AudioStftPannsOnlyModel(
+    # Instantiate Advanced Multimodal Fusion Model
+    model = StftPannsMobileNetAdvancedMultimodalModel(
         audio_panns_encoder=audio_encoder.to(device),
+        video_mobilenet_encoder=video_encoder.to(device),
         d_model=config.model.d_model,
         num_heads=config.model.num_heads,
+        encoder_mode=config.model.encoder_mode,
         dropout=config.model.dropout,
     ).to(device)
 
