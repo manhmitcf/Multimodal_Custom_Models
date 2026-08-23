@@ -69,11 +69,13 @@ class MultimodalTrainer:
 
     def _build_dataloader(self, dataset: SourcePairedDataset, shuffle: bool, split: str = "train") -> DataLoader:
         if split in ("val", "test"):
-            num_workers = 4
+            num_workers = 2
+            use_persistent = False
         else:
-            num_workers = resolve_num_workers(self.config.data.num_workers)
+            # Cap train workers at 8 to leave 12 CPU cores free for CUDA kernel execution & main process
+            num_workers = min(8, resolve_num_workers(self.config.data.num_workers))
+            use_persistent = True
 
-        use_persistent = num_workers > 0
         use_pin = torch.cuda.is_available()
 
         logger.info(f"Building DataLoader for '{split}' (shuffle={shuffle}): num_workers={num_workers}, pin_memory={use_pin}, persistent_workers={use_persistent}")
