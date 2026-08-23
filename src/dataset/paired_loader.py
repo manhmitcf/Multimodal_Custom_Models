@@ -166,12 +166,27 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
         return waveform.to(dtype=torch.float32)
 
     def _load_video(self, rel_path: str) -> Tensor:
+        import cv2
+
         video_file = resolve_dataset_file(self.dataset_base_dir, rel_path)
         try:
             if video_file.is_file() and video_file.suffix.lower() in (".png", ".jpg", ".jpeg"):
                 img = Image.open(video_file).convert("RGB")
             else:
-                img = Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
+                cap = cv2.VideoCapture(str(video_file))
+                if cap.isOpened():
+                    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                    frame_idx = max(frame_count // 2, 0)
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                    ret, frame = cap.read()
+                    cap.release()
+                    if ret and frame is not None:
+                        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        img = Image.fromarray(frame_rgb)
+                    else:
+                        img = Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
+                else:
+                    img = Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
             return self.transform(img)
         except Exception:
             img = Image.new("RGB", (self.config.data.image_size, self.config.data.image_size), color=(128, 128, 128))
