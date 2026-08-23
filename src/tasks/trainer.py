@@ -1,4 +1,4 @@
-"""Trainer for Custom STFT 256k MobileNetV2 Multimodal Model."""
+"""Trainer for Custom STFT 256k MobileNet Multimodal Model strictly matching baseline standards."""
 
 from __future__ import annotations
 
@@ -6,79 +6,158 @@ import csv
 import json
 import logging
 import shutil
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import torch
+from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_fscore_support
 from torch import nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from dataset.paired_loader import SourcePairedDataset, paired_collate, resolve_num_workers
-from models.fusion_model import CustomSTFT256kMobileNetMultimodalModel
 from settings import RunConfig
-from utils.model_profile import estimate_flops
 
 logger = logging.getLogger(__name__)
 
+CLASS_NAMES = ["unfed", "low", "medium", "high"]
+
+
+@dataclass
+class EvaluationResult:
+    accuracy: float
+    macro_f1: float
+    per_class_f1: list[float]
+    confusion_matrix: list[list[int]]
+
+
+def evaluate(
+    model: nn.Module,
+    dataloader: DataLoader,
+    device: torch.device,
+    progress_desc: str = "Evaluating",
+) -> EvaluationResult:
+    """Run model evaluation over dataloader and return accuracy, macro-F1, per-class F1, and confusion matrix."""
+    was_training = model.training
+    model.eval()
+
+    target_batches: list[torch.Tensor] = []
+    prediction_batches: list[torch.Tensor] = []
+
+    with torch.no_grad():
+        pbar = tqdm(dataloader, desc=progress_desc, leave=False)
+        for batch in pbar:
+            waveforms = batch["waveform"].to(device, non_blocking=True)
+            images = batch["image"].to(device, non_blocking=True)
+            logits = model(waveforms, images)
+            preds = logits.argmax(dim=1)
+
+            prediction_batches.append(preds.cpu())
+            target_batches.append(batch["label"].cpu())
+
+    if was_training:
+        model.train()
+
+    targets = torch.cat(target_batches).numpy()
+    predictions = torch.cat(prediction_batches).numpy()
+    _, _, f1, _ = precision_recall_fscore_support(targets, predictions, labels=[0, 1, 2, 3], zero_division=0)
+
+    return EvaluationResult(
+        accuracy=float(accuracy_score(targets, predictions)),
+        macro_f1=float(f1.mean()),
+        per_class_f1=[float(val) for val in f1],
+        confusion_matrix=confusion_matrix(targets, predictions, labels=[0, 1, 2, 3]).tolist(),
+    )
+
 
 class MultimodalTrainer:
-    def __init__(self, config: RunConfig, model: CustomSTFT256kMobileNetMultimodalModel) -> None:
+    def __init__(self, config: RunConfig, model: nn.Module) -> None:
         self.config = config
         self.model = model
-
-        self.device = self._resolve_device(config.training.device)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
-        # Profile parameters
-        dummy_wave = torch.randn(2, 512000, device=self.device)
-        dummy_img = torch.randn(2, 3, 224, 224, device=self.device)
-        self.profile = estimate_flops(self.model, dummy_wave, dummy_img)
-
-        # Separate learning rates for fusion head vs pretrained encoders
-        fusion_params = list(self.model.fusion.parameters()) + list(self.model.audio_cnn.parameters())
-        encoder_params = list(self.model.video_encoder.parameters())
-
-        self.optimizer = torch.optim.AdamW(
-            [
-                {"params": fusion_params, "lr": config.training.fusion_learning_rate},
-                {"params": encoder_params, "lr": config.training.encoder_learning_rate},
-            ],
-            weight_decay=config.training.weight_decay,
-        )
-
-        self.criterion = nn.CrossEntropyLoss()
         self.output_dir = Path(config.training.output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.history_csv_path = self.output_dir / "history.csv"
 
-        self.splits_dir = self.output_dir / "splits"
-        self.splits_dir.mkdir(parents=True, exist_ok=True)
-        self._copy_splits()
+        # Setup Optimizer with parameter groups (Fusion vs Encoder)
+        fusion_params = [p for n, p in model.named_parameters() if n.startswith("fusion_head.") and p.requires_grad]
+        encoder_params = [p for n, p in model.named_parameters() if not n.startswith("fusion_head.") and p.requires_grad]
 
-    def _resolve_device(self, requested: str) -> torch.device:
-        if requested == "auto":
-            return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        return torch.device(requested)
+        groups: list[dict[str, Any]] = [
+            {"params": fusion_params, "lr": config.training.fusion_learning_rate, "weight_decay": config.training.weight_decay}
+        ]
+        if encoder_params:
+            groups.append({"params": encoder_params, "lr": config.training.encoder_learning_rate, "weight_decay": config.training.weight_decay})
 
-    def _copy_splits(self) -> None:
+        self.optimizer = torch.optim.AdamW(groups)
+        self.criterion = nn.CrossEntropyLoss()
+
+    def _init_output_directory(self) -> None:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         split_src = Path(self.config.data.split_dir)
-        for split in ("train", "val", "test"):
-            src_file = split_src / f"{split}.csv"
-            if src_file.exists():
-                shutil.copy(src_file, self.splits_dir / f"{split}.csv")
+        if split_src.exists():
+            target_splits = self.output_dir / "splits"
+            target_splits.mkdir(parents=True, exist_ok=True)
+            for split_file in ("train.csv", "val.csv", "test.csv"):
+                src = split_src / split_file
+                if src.exists():
+                    shutil.copy2(src, target_splits / split_file)
+
+        headers = [
+            "epoch",
+            "train_loss",
+            "val_accuracy",
+            "val_macro_f1",
+            "val_f1_unfed",
+            "val_f1_low",
+            "val_f1_medium",
+            "val_f1_high",
+        ] + [f"cm_{i}_{j}" for i in range(4) for j in range(4)]
+
+        with self.history_csv_path.open("w", newline="", encoding="utf-8") as handle:
+            csv.writer(handle).writerow(headers)
+
+    def _save_result(self, name: str, result: EvaluationResult) -> None:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        (self.output_dir / f"{name}_metrics.json").write_text(
+            json.dumps(asdict(result), ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        with (self.output_dir / f"{name}_confusion_matrix.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["Actual\\Predicted"] + CLASS_NAMES)
+            for idx, class_name in enumerate(CLASS_NAMES):
+                writer.writerow([class_name] + result.confusion_matrix[idx])
+
+    def _log_history_epoch(self, epoch: int, train_loss: float, validation: EvaluationResult) -> None:
+        cm_flat = [val for row in validation.confusion_matrix for val in row]
+        row = [
+            epoch,
+            round(train_loss, 5),
+            round(validation.accuracy, 4),
+            round(validation.macro_f1, 4),
+            round(validation.per_class_f1[0], 4),
+            round(validation.per_class_f1[1], 4),
+            round(validation.per_class_f1[2], 4),
+            round(validation.per_class_f1[3], 4),
+        ] + cm_flat
+        with self.history_csv_path.open("a", newline="", encoding="utf-8") as handle:
+            csv.writer(handle).writerow(row)
 
     def _build_dataloader(self, dataset: SourcePairedDataset, shuffle: bool, split: str = "train") -> DataLoader:
         if split in ("val", "test"):
             num_workers = 2
             use_persistent = False
         else:
-            # Cap train workers at 8 to leave 12 CPU cores free for CUDA kernel execution & main process
             num_workers = min(8, resolve_num_workers(self.config.data.num_workers))
             use_persistent = True
 
         use_pin = torch.cuda.is_available()
-
         logger.info(f"Building DataLoader for '{split}' (shuffle={shuffle}): num_workers={num_workers}, pin_memory={use_pin}, persistent_workers={use_persistent}")
+
         return DataLoader(
             dataset,
             batch_size=self.config.training.batch_size,
@@ -90,6 +169,7 @@ class MultimodalTrainer:
         )
 
     def fit_then_test(self) -> dict[str, Any]:
+        self._init_output_directory()
         train_ds = SourcePairedDataset(self.config, "train")
         val_ds = SourcePairedDataset(self.config, "val")
         test_ds = SourcePairedDataset(self.config, "test")
@@ -98,181 +178,99 @@ class MultimodalTrainer:
         val_loader = self._build_dataloader(val_ds, shuffle=False, split="val")
         test_loader = self._build_dataloader(test_ds, shuffle=False, split="test")
 
-        history_path = self.output_dir / "history.csv"
-        history_fields = [
-            "epoch",
-            "train_loss",
-            "train_acc",
-            "train_macro_f1",
-            "val_loss",
-            "val_acc",
-            "val_macro_f1",
-        ] + [f"val_cm_{i}_{j}" for i in range(4) for j in range(4)]
+        epochs = self.config.training.epochs
+        best_score = float("-inf")
+        logger.info("Starting multimodal training pipeline (monitoring validation macro-F1)...")
 
-        best_val_f1 = -1.0
-        best_val_metrics = {}
+        for epoch in range(1, epochs + 1):
+            self.model.train()
+            total_loss = 0.0
+            total_samples = 0
+            pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{epochs}")
 
-        with history_path.open("w", encoding="utf-8", newline="") as h_file:
-            writer = csv.DictWriter(h_file, fieldnames=history_fields)
-            writer.writeheader()
-
-            for epoch in range(1, self.config.training.epochs + 1):
-                train_loss, train_acc, train_f1 = self._train_epoch(train_loader, epoch=epoch)
-                val_loss, val_acc, val_f1, val_cm = self._evaluate(val_loader, desc=f"Epoch {epoch:03d} Validation")
-
-                row = {
-                    "epoch": epoch,
-                    "train_loss": f"{train_loss:.6f}",
-                    "train_acc": f"{train_acc:.6f}",
-                    "train_macro_f1": f"{train_f1:.6f}",
-                    "val_loss": f"{val_loss:.6f}",
-                    "val_acc": f"{val_acc:.6f}",
-                    "val_macro_f1": f"{val_f1:.6f}",
-                }
-                for i in range(4):
-                    for j in range(4):
-                        row[f"val_cm_{i}_{j}"] = int(val_cm[i, j])
-                writer.writerow(row)
-                h_file.flush()
-
-                logger.info(f"Epoch {epoch:03d}/{self.config.training.epochs:03d} | Train Loss: {train_loss:.4f} | Train F1: {train_f1:.4f} | Val Loss: {val_loss:.4f} | Val F1: {val_f1:.4f} (Best: {max(best_val_f1, val_f1):.4f})")
-
-                if val_f1 > best_val_f1:
-                    best_val_f1 = val_f1
-                    best_val_metrics = {
-                        "epoch": epoch,
-                        "val_loss": float(val_loss),
-                        "val_acc": float(val_acc),
-                        "val_macro_f1": float(val_f1),
-                        "profile": self.profile,
-                    }
-                    torch.save(self.model.state_dict(), self.output_dir / "best.pt")
-                    np.savetxt(self.output_dir / "best_val_confusion_matrix.csv", val_cm, fmt="%d", delimiter=",")
-
-        # Save Best Val Metrics
-        (self.output_dir / "best_val_metrics.json").write_text(json.dumps(best_val_metrics, indent=4), encoding="utf-8")
-
-        # Load Best Model for Testing
-        self.model.load_state_dict(torch.load(self.output_dir / "best.pt", map_location=self.device))
-        test_loss, test_acc, test_f1, test_cm = self._evaluate(test_loader)
-
-        test_metrics = {
-            "test_loss": float(test_loss),
-            "test_acc": float(test_acc),
-            "test_macro_f1": float(test_f1),
-            "profile": self.profile,
-        }
-        (self.output_dir / "test_metrics.json").write_text(json.dumps(test_metrics, indent=4), encoding="utf-8")
-        np.savetxt(self.output_dir / "test_confusion_matrix.csv", test_cm, fmt="%d", delimiter=",")
-
-        # Summary Results CSV
-        summary_path = self.output_dir / "summary_results.csv"
-        with summary_path.open("w", encoding="utf-8", newline="") as s_file:
-            s_writer = csv.DictWriter(
-                s_file,
-                fieldnames=[
-                    "model_name",
-                    "fusion_type",
-                    "best_val_macro_f1",
-                    "test_macro_f1",
-                    "test_acc",
-                    "total_params",
-                    "trainable_params",
-                ],
-            )
-            s_writer.writeheader()
-            s_writer.writerow(
-                {
-                    "model_name": "CustomSTFT256kMobileNetMultimodalModel",
-                    "fusion_type": self.config.model.fusion_type,
-                    "best_val_macro_f1": f"{best_val_f1:.6f}",
-                    "test_macro_f1": f"{test_f1:.6f}",
-                    "test_acc": f"{test_acc:.6f}",
-                    "total_params": self.profile.get("total_params", 0),
-                    "trainable_params": self.profile.get("trainable_params", 0),
-                }
-            )
-
-        logger.info(f"FIT & TEST COMPLETED! Test Macro-F1: {test_f1:.4f} | Total Params: {self.profile.get('total_params', 0):,}")
-        return test_metrics
-
-    def _train_epoch(self, dataloader: DataLoader, epoch: int = 1) -> tuple[float, float, float]:
-        import sys
-        from tqdm import tqdm
-
-        self.model.train()
-        total_loss = 0.0
-        all_preds = []
-        all_labels = []
-
-        disable_progress = not sys.stdout.isatty()
-        for batch in tqdm(dataloader, desc=f"Epoch {epoch:03d} Training", leave=False, unit="batch", disable=disable_progress):
-            waveforms = batch["waveform"].to(self.device, non_blocking=True)
-            images = batch["image"].to(self.device, non_blocking=True)
-            labels = batch["label"].to(self.device, non_blocking=True)
-
-            self.optimizer.zero_grad()
-            logits = self.model(waveforms, images)
-            loss = self.criterion(logits, labels)
-            loss.backward()
-            self.optimizer.step()
-
-            total_loss += loss.item() * labels.size(0)
-            preds = logits.argmax(dim=1)
-            all_preds.extend(preds.cpu().tolist())
-            all_labels.extend(labels.cpu().tolist())
-
-        avg_loss = total_loss / len(all_labels)
-        acc, f1, _ = compute_metrics(all_preds, all_labels)
-        return avg_loss, acc, f1
-
-    def _evaluate(self, dataloader: DataLoader, desc: str = "Evaluating") -> tuple[float, float, float, np.ndarray]:
-        import sys
-        from tqdm import tqdm
-
-        self.model.eval()
-        total_loss = 0.0
-        all_preds = []
-        all_labels = []
-
-        disable_progress = not sys.stdout.isatty()
-        with torch.no_grad():
-            for batch in tqdm(dataloader, desc=desc, leave=False, unit="batch", disable=disable_progress):
+            for batch in pbar:
+                self.optimizer.zero_grad(set_to_none=True)
                 waveforms = batch["waveform"].to(self.device, non_blocking=True)
                 images = batch["image"].to(self.device, non_blocking=True)
                 labels = batch["label"].to(self.device, non_blocking=True)
 
                 logits = self.model(waveforms, images)
                 loss = self.criterion(logits, labels)
+                loss.backward()
+                self.optimizer.step()
 
                 total_loss += loss.item() * labels.size(0)
-                preds = logits.argmax(dim=1)
-                all_preds.extend(preds.cpu().tolist())
-                all_labels.extend(labels.cpu().tolist())
+                total_samples += labels.size(0)
+                pbar.set_postfix({"Loss": f"{loss.item():.4f}", "Mean Loss": f"{total_loss / total_samples:.4f}"})
 
-        avg_loss = total_loss / len(all_labels)
-        acc, f1, cm = compute_metrics(all_preds, all_labels)
-        return avg_loss, acc, f1, cm
+            train_loss = total_loss / total_samples
+            validation = evaluate(self.model, val_loader, self.device, progress_desc=f"Validation Epoch {epoch}/{epochs}")
+            self._log_history_epoch(epoch, train_loss, validation)
 
+            logger.info(
+                "Epoch %d/%d: Train Loss = %.5f | Val Accuracy = %.4f | Val Macro-F1 = %.4f | Val Per-class F1 = %s",
+                epoch,
+                epochs,
+                train_loss,
+                validation.accuracy,
+                validation.macro_f1,
+                [round(val, 4) for val in validation.per_class_f1],
+            )
 
-def compute_metrics(preds: list[int], labels: list[int]) -> tuple[float, float, np.ndarray]:
-    p = np.array(preds)
-    l = np.array(labels)
-    acc = float((p == l).mean())
+            if validation.macro_f1 > best_score:
+                best_score = validation.macro_f1
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "model_state_dict": self.model.state_dict(),
+                        "optimizer_state_dict": self.optimizer.state_dict(),
+                        "val_macro_f1": best_score,
+                    },
+                    self.output_dir / "best.pt",
+                )
+                self._save_result("best_val", validation)
+                logger.info("Saved best fusion checkpoint: '%s' (val macro-F1 = %.4f)", self.output_dir / "best.pt", best_score)
 
-    cm = np.zeros((4, 4), dtype=int)
-    for pred, label in zip(preds, labels):
-        cm[label, pred] += 1
+        logger.info("Training complete. Evaluating best checkpoint on holdout test set...")
+        best_ckpt = torch.load(self.output_dir / "best.pt", map_location=self.device, weights_only=False)
+        self.model.load_state_dict(best_ckpt["model_state_dict"], strict=True)
 
-    f1s = []
-    for c in range(4):
-        tp = cm[c, c]
-        fp = cm[:, c].sum() - tp
-        fn = cm[c, :].sum() - tp
-        precision = tp / (tp + fp + 1e-10)
-        recall = tp / (tp + fn + 1e-10)
-        f1 = 2 * precision * recall / (precision + recall + 1e-10)
-        f1s.append(f1)
+        test = evaluate(self.model, test_loader, self.device, progress_desc="Final holdout test")
+        self._save_result("test", test)
 
-    macro_f1 = float(np.mean(f1s))
-    return acc, macro_f1, cm
+        summary_path = self.output_dir / "summary_results.csv"
+        with summary_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow([
+                "val_macro_f1",
+                "val_accuracy",
+                "test_macro_f1",
+                "test_accuracy",
+                "test_f1_unfed",
+                "test_f1_low",
+                "test_f1_medium",
+                "test_f1_high",
+            ])
+            writer.writerow([
+                round(best_score, 4),
+                round(validation.accuracy, 4),
+                round(test.macro_f1, 4),
+                round(test.accuracy, 4),
+                round(test.per_class_f1[0], 4),
+                round(test.per_class_f1[1], 4),
+                round(test.per_class_f1[2], 4),
+                round(test.per_class_f1[3], 4),
+            ])
+
+        logger.info(
+            "Holdout Test: Accuracy = %.4f | Macro-F1 = %.4f | Per-class F1 = %s",
+            test.accuracy,
+            test.macro_f1,
+            [round(val, 4) for val in test.per_class_f1],
+        )
+
+        return {
+            "test_macro_f1": test.macro_f1,
+            "test_accuracy": test.accuracy,
+            "best_val_macro_f1": best_score,
+        }
