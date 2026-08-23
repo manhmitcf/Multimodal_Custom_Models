@@ -73,13 +73,17 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
         audio_reference = load_audio_reference(config.references.audio_repo)
         video_reference = load_video_reference(config.references.video_repo)
 
+        workers = config.data.num_workers
+        if workers <= 0:
+            workers = max(os.cpu_count() or 4, 1)
+
         audio_parent = _source_parent(
             audio_reference.FishVoiceDataLoader,
             self.records,
             split,
             sample_rate=64000,
             batch_size=config.training.batch_size,
-            num_workers=config.data.num_workers,
+            num_workers=workers,
             cache_audio=config.data.cache_audio,
         )
         video_module = video_reference.video_loader_module
@@ -88,7 +92,7 @@ class SourcePairedDataset(Dataset[dict[str, Any]]):
             self.records,
             split,
             batch_size=config.training.batch_size,
-            dataloader_workers=config.data.num_workers,
+            dataloader_workers=workers,
             prefetch_factor=None,
             cache_mode=config.data.video_cache_mode,
             image_size=config.data.image_size,
