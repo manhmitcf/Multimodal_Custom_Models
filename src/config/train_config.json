@@ -15,7 +15,8 @@
   "checkpoints": {
     "audio": "../checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/audio_best.pt",
     "video_by_backbone": {
-      "mobilenet_v2": "../checkpoints/MobileNetV2_holdout_random_sample_20260729_153012/DL_video/checkpoint/mobilenet_v2/video_best.pt"
+      "mobilenet_v2": "../checkpoints/MobileNetV2_holdout_random_sample_20260729_153012/DL_video/checkpoint/mobilenet_v2/video_best.pt",
+      "efficientnet_b0": "../checkpoints/EfficientNetB0_holdout_random_sample_20260804_181745/U_FFIA_video/checkpoint/efficientnet_b0/video_best.pt"
     }
   },
   "data": {
@@ -26,7 +27,7 @@
     "image_size": 224
   },
   "model": {
-    "video_backbone": "mobilenet_v2",
+    "video_backbone": "efficientnet_b0",
     "encoder_mode": "frozen",
     "d_model": 256,
     "dropout": 0.1,
@@ -46,7 +47,7 @@
     "enabled": true,
     "repo_id": "manhmitcf/fish_result",
     "repo_type": "dataset",
-    "path_prefix": "stft256k_raw2049_freqattn_mobilenetv2_fbgf",
+    "path_prefix": "stft256k_raw2049_freqattn_efficientnetb0_fbgf",
     "create_repo": true
   }
 }
