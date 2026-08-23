@@ -51,7 +51,7 @@ class STFTTodBImageTransform(nn.Module):
         flat_db = db_spec.reshape(batch_size, -1)
         min_val = flat_db.min(dim=1, keepdim=True)[0].view(batch_size, 1, 1, 1)
         max_val = flat_db.max(dim=1, keepdim=True)[0].view(batch_size, 1, 1, 1)
-        norm_spec = (db_spec - min_val) / (max_val - min_val + 1e-6)
+        norm_spec = 2.0 * (db_spec - min_val) / (max_val - min_val + 1e-6) - 1.0
 
         # Interpolate 2D Spectrogram to target Image Size (224x224)
         resized_spec = F.interpolate(
