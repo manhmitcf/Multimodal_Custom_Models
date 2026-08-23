@@ -21,6 +21,8 @@ from dataset.paired_loader import SourcePairedDataset, paired_collate, resolve_n
 from settings import RunConfig
 
 logger = logging.getLogger(__name__)
+logging.getLogger("matplotlib").setLevel(logging.ERROR)
+logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
 
 CLASS_NAMES = ["unfed", "low", "medium", "high"]
 
