@@ -9,7 +9,7 @@ from models.custom_audio_cnn import CustomRawStftAudioCNN
 
 
 class FactorizedBilinearGatedFusionHead(nn.Module):
-    """Multimodal Fusion Head: Direct Pre-trained Video Logits Base + Factorized Bilinear Pooling (MFB k=3)."""
+    """Multimodal Fusion Head: Factorized Bilinear Pooling (MFB k=3) + Dynamic Gated Routing (GMF)."""
 
     def __init__(self, audio_dim: int = 256, video_dim: int = 1280, d_model: int = 256, factor_k: int = 3, dropout: float = 0.1, fusion_type: str = "fbgf") -> None:
         super().__init__()
@@ -28,7 +28,7 @@ class FactorizedBilinearGatedFusionHead(nn.Module):
         # Dynamic Gating Gate
         self.gate_linear = nn.Linear(d_model * 2, d_model)
 
-        # Residual Classifier Head mapping fused representation to 4-class residual logits
+        # Classifier Head
         self.classifier = nn.Sequential(
             nn.Linear(d_model, d_model),
             nn.GELU(),
@@ -36,12 +36,7 @@ class FactorizedBilinearGatedFusionHead(nn.Module):
             nn.Linear(d_model, 4),
         )
 
-    def forward(self, audio_feature: Tensor, video_logits_or_feature: Tensor, video_feature: Tensor | None = None) -> Tensor:
-        if video_feature is None:
-            video_feature = video_logits_or_feature
-            video_logits = torch.zeros(audio_feature.shape[0], 4, device=audio_feature.device)
-        else:
-            video_logits = video_logits_or_feature
+    def forward(self, audio_feature: Tensor, video_feature: Tensor) -> Tensor:
         # Project both audio and video to common d_model space [B, 256]
         aud_embed = self.audio_proj(audio_feature) if audio_feature.shape[1] != self.d_model else audio_feature
         vid_embed = self.video_proj(video_feature) if video_feature.shape[1] != self.d_model else video_feature
@@ -65,11 +60,8 @@ class FactorizedBilinearGatedFusionHead(nn.Module):
             # Combine Bilinear Feature & Dynamic Gated Routing
             fused = gate * mfb_normed + (1.0 - gate) * torch.relu(vid_embed)
 
-        fusion_logits = self.classifier(fused)
-
-        # Base 92%+ Video Logits + Multimodal Fusion Residual Logits
-        # Guarantees 92%+ MobileNetV2 accuracy on Epoch 1, Batch 1!
-        return video_logits + fusion_logits
+        logits = self.classifier(fused)
+        return logits
 
 
 class CustomSTFT256kMobileNetMultimodalModel(nn.Module):
@@ -117,6 +109,7 @@ class CustomSTFT256kMobileNetMultimodalModel(nn.Module):
         if mode:
             self.audio_cnn.train()
             if self.encoder_mode != "tune":
+                # Force frozen Video MobileNetV2 strictly into EVAL mode so BatchNorm stats are NOT corrupted
                 self.video_encoder.eval()
         return self
 
@@ -124,9 +117,9 @@ class CustomSTFT256kMobileNetMultimodalModel(nn.Module):
         # 1. Audio Forward: Raw STFT 2049 + F-Attn + Depthwise Audio CNN -> [B, 256]
         audio_feat = self.audio_cnn(waveforms)
 
-        # 2. Video Forward: Pre-trained MobileNetV2 -> Logits [B, 4] and Visual Feature [B, 1280]
-        video_logits, video_feat = self.video_encoder(images)
+        # 2. Video Forward: MobileNetV2 -> [B, 1280]
+        video_feat = self.video_encoder(images)
 
-        # 3. Factorized Bilinear Gated Fusion Head (Base Video 92% Logits + Audio Residual Logits)
-        logits = self.fusion(audio_feat, video_logits, video_feat)
+        # 3. Factorized Bilinear Gated Fusion (FBGF / GMF) -> [B, 4] Logits
+        logits = self.fusion(audio_feat, video_feat)
         return logits
