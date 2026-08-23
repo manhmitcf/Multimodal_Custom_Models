@@ -111,8 +111,8 @@ class MultimodalTrainer:
             writer.writeheader()
 
             for epoch in range(1, self.config.training.epochs + 1):
-                train_loss, train_acc, train_f1 = self._train_epoch(train_loader)
-                val_loss, val_acc, val_f1, val_cm = self._evaluate(val_loader)
+                train_loss, train_acc, train_f1 = self._train_epoch(train_loader, epoch=epoch)
+                val_loss, val_acc, val_f1, val_cm = self._evaluate(val_loader, desc=f"Epoch {epoch:03d} Validation")
 
                 row = {
                     "epoch": epoch,
@@ -190,13 +190,15 @@ class MultimodalTrainer:
         logger.info(f"FIT & TEST COMPLETED! Test Macro-F1: {test_f1:.4f} | Total Params: {self.profile.get('total_params', 0):,}")
         return test_metrics
 
-    def _train_epoch(self, dataloader: DataLoader) -> tuple[float, float, float]:
+    def _train_epoch(self, dataloader: DataLoader, epoch: int = 1) -> tuple[float, float, float]:
+        from tqdm import tqdm
+
         self.model.train()
         total_loss = 0.0
         all_preds = []
         all_labels = []
 
-        for batch in dataloader:
+        for batch in tqdm(dataloader, desc=f"Epoch {epoch:03d} Training", leave=False, unit="batch"):
             waveforms = batch["waveform"].to(self.device, non_blocking=True)
             images = batch["image"].to(self.device, non_blocking=True)
             labels = batch["label"].to(self.device, non_blocking=True)
@@ -216,14 +218,16 @@ class MultimodalTrainer:
         acc, f1, _ = compute_metrics(all_preds, all_labels)
         return avg_loss, acc, f1
 
-    def _evaluate(self, dataloader: DataLoader) -> tuple[float, float, float, np.ndarray]:
+    def _evaluate(self, dataloader: DataLoader, desc: str = "Evaluating") -> tuple[float, float, float, np.ndarray]:
+        from tqdm import tqdm
+
         self.model.eval()
         total_loss = 0.0
         all_preds = []
         all_labels = []
 
         with torch.no_grad():
-            for batch in dataloader:
+            for batch in tqdm(dataloader, desc=desc, leave=False, unit="batch"):
                 waveforms = batch["waveform"].to(self.device, non_blocking=True)
                 images = batch["image"].to(self.device, non_blocking=True)
                 labels = batch["label"].to(self.device, non_blocking=True)
