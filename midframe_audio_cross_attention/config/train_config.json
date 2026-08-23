@@ -34,7 +34,7 @@
     "weight_decay": 0.0001,
     "seed": 42,
     "device": "auto",
-    "output_dir": "../runs/swin_tiny_ibot_stage3_cross_attn"
+    "output_dir": "checkpoint"
   },
   "ibot_pretraining": {
     "enabled": true,
@@ -47,13 +47,13 @@
     "num_prototypes": 2048,
     "student_temperature": 0.1,
     "teacher_temperature": 0.07,
-    "output_dir": "../runs/swin_tiny_ibot_stage3_cross_attn/ibot_pretraining"
+    "output_dir": "checkpoint/ibot_pretraining"
   },
   "results_upload": {
     "enabled": true,
     "repo_id": "manhmitcf/fish_result",
     "repo_type": "dataset",
-    "path_prefix": "swin_tiny_ibot_spatial",
+    "path_prefix": "robust_bilinear_modality_dropout",
     "create_repo": true
   }
 }

@@ -1,9 +1,9 @@
 {
   "enabled": true,
   "source_dir": "checkpoint",
-  "zip_path": "checkpoint/gw_avf_multimodal_results.zip",
+  "zip_path": "checkpoint/R_BPMD_Multimodal_Artifacts.zip",
   "repo_id": "manhmitcf/fish_result",
   "repo_type": "dataset",
-  "path_in_repo": "gw_avf_multimodal_results.zip",
+  "path_in_repo": "R_BPMD_Multimodal_Artifacts.zip",
   "create_repo": true
 }
