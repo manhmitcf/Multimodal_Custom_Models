@@ -6,11 +6,16 @@ import logging
 import sys
 from pathlib import Path
 
+# Insert src directory to sys.path at position 0 to guarantee module resolution
+src_dir = Path(__file__).resolve().parent
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
 import torch
 
 from models.custom_audio_cnn import CustomRawStftAudioCNN
 from models.fusion_model import CustomSTFT256kMobileNetMultimodalModel
-from models.reference_bridge import load_video_reference
+from models.source_encoders import build_video_encoder
 from settings import RunConfig
 from tasks.trainer import MultimodalTrainer
 from utils.huggingface_results import upload_results_artifact
@@ -50,12 +55,7 @@ def main() -> None:
 
     # Build Video Backbone (MobileNetV2)
     logger.info(f"Building Video Backbone ({config.model.video_backbone}) from {config.video_checkpoint}...")
-    video_ref = load_video_reference(config.references.video_repo)
-    video_encoder = video_ref.build_video_backbone(
-        backbone_name=config.model.video_backbone,
-        num_classes=4,
-        checkpoint_path=config.video_checkpoint,
-    )
+    video_encoder = build_video_encoder(config)
 
     # Build Multimodal Model
     logger.info(f"Building Custom STFT 256k Multimodal Model (fusion_type={config.model.fusion_type})...")
