@@ -1,6 +1,6 @@
-# STFT-dB + PANNS CNN6 (Audio) + MobileNetV2 (Video) Multimodal Fusion (Marimo Guide)
+# Single-Modality Audio Only: STFT-dB + PANNS CNN6 Unfrozen (Marimo Guide)
 
-Biển hướng dẫn này dành cho **Nhánh `exp/stft2db-image-swintiny-mobilenetv2-cross-attn`**, triển khai **Phương pháp Dung hợp Mới**: Biến đổi sóng âm thanh $2$s qua **PANNs CNN6** ($6$ tokens) kết hợp **Ảnh phổ STFT-dB 3 kênh ($224 \times 224$)**, dung hợp với kênh Video sử dụng **MobileNetV2** siêu nhẹ (~3.5M params) thông qua Cross-Attention, và tự động nén/upload kết quả đầy đủ lên **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.
+Biển hướng dẫn này dành cho **Nhánh `exp/audio-stft-panns-cnn6-only`**, triển khai **Mô hình Chuyên biệt Đơn thức Âm thanh (Audio Only)**: Biến đổi sóng âm thanh $2$s qua **PANNs CNN6 (Unfrozen fine-tuning toàn bộ)** kết hợp **Ảnh phổ STFT-dB 3 kênh ($224 \times 224$)**, đánh giá chính xác hiệu năng âm thanh đơn thức, và tự động nén/upload kết quả đầy đủ lên **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.
 
 > 📖 **Hướng dẫn chi tiết từng tham số cấu hình JSON**: Xem tài liệu [`CONFIG_GUIDE.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/src/CONFIG_GUIDE.md).
 
@@ -10,11 +10,11 @@ Biển hướng dẫn này dành cho **Nhánh `exp/stft2db-image-swintiny-mobile
 
 ```bash
 cd /marimo
-git clone --branch exp/stft2db-image-swintiny-mobilenetv2-cross-attn --single-branch https://github.com/manhmitcf/Multimodal_Custom_Models.git
+git clone --branch exp/audio-stft-panns-cnn6-only --single-branch https://github.com/manhmitcf/Multimodal_Custom_Models.git
 cd Multimodal_Custom_Models
 git branch --show-current
 ```
-*Lưu ý: Lệnh `git branch` phải hiển thị đúng `exp/stft2db-image-swintiny-mobilenetv2-cross-attn`.*
+*Lưu ý: Lệnh `git branch` phải hiển thị đúng `exp/audio-stft-panns-cnn6-only`.*
 
 ---
 
@@ -38,9 +38,9 @@ rm -rf /marimo/Fish_Feeding_Intensity_Dataset/audio/audio /marimo/Fish_Feeding_I
 
 ---
 
-## 3. Tải Checkpoints & Immutable Splits
+## 3. Tải Checkpoint & Immutable Splits
 
-Tải các checkpoint tiền huấn luyện của Audio (PANNS Cnn6) và Visual (MobileNetV2):
+Tải checkpoint tiền huấn luyện của Audio (PANNS Cnn6):
 
 ```bash
 cd /marimo/Multimodal_Custom_Models
@@ -48,19 +48,15 @@ python -m pip install --upgrade "huggingface_hub[cli]"
 mkdir -p checkpoints /tmp/uffia_checkpoints
 
 hf download hoangphihung442004/Results_U_FFIA27K_audio PANNS_Cnn6_holdout_random_sample_20260729_153012.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
-hf download hoangphihung442004/Results_U_FFIA27K_video MobileNetV2_holdout_random_sample_20260729_153012.zip --repo-type dataset --local-dir /tmp/uffia_checkpoints
 
 mkdir -p checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012
-mkdir -p checkpoints/MobileNetV2_holdout_random_sample_20260729_153012
 unzip -q /tmp/uffia_checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012.zip -d checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012 -x '.git/*' '*/.git/*'
-unzip -q /tmp/uffia_checkpoints/MobileNetV2_holdout_random_sample_20260729_153012.zip -d checkpoints/MobileNetV2_holdout_random_sample_20260729_153012 -x '.git/*' '*/.git/*'
 rm -rf /tmp/uffia_checkpoints
 ```
 
 Kiểm tra sự tồn tại của file checkpoint trước khi chạy:
 ```bash
 test -f checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/audio_best.pt && echo "Audio PANNS Checkpoint OK"
-test -f checkpoints/MobileNetV2_holdout_random_sample_20260729_153012/DL_video/checkpoint/mobilenet_v2/video_best.pt && echo "Video MobileNetV2 Checkpoint OK"
 test -f checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/checkpoint/panns_cnn6/splits/train.csv && echo "Splits CSV OK"
 ```
 
@@ -79,7 +75,7 @@ cd /marimo/Multimodal_Custom_Models/src
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
-# Khởi chạy Pipeline
+# Khởi chạy Pipeline Audio Only
 python main.py
 ```
 

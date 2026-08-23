@@ -20,8 +20,8 @@
     "image_size": 224
   },
   "model": {
-    "video_backbone": "mobilenet_v2",
-    "encoder_mode": "frozen",
+    "video_backbone": "swin_tiny",
+    "encoder_mode": "tune",
     "d_model": 256,
     "num_heads": 4,
     "dropout": 0.1
@@ -40,7 +40,7 @@
     "enabled": true,
     "repo_id": "manhmitcf/fish_result",
     "repo_type": "dataset",
-    "path_prefix": "stft2db_swintiny_mobilenetv2",
+    "path_prefix": "audio_stft_panns_cnn6_only",
     "create_repo": true
   }
 }

@@ -1,4 +1,4 @@
-"""STFT dB + PANNS CNN6 (Audio) + MobileNetV2 (Video) Multimodal Fusion Entry Point."""
+"""Single-Modality Audio Only (STFT-dB + PANNS CNN6 Unfrozen) Entry Point."""
 
 from __future__ import annotations
 
@@ -12,11 +12,10 @@ import torch
 from torch.utils.data import DataLoader
 
 from config.artifact_upload_config import ArtifactUploadConfig
-from dataset.paired_loader import SourcePairedDataset, SourceUnlabeledVideoDataset, paired_collate, unlabeled_video_collate
-from models.fusion_model import StftPannsMobileNetMultimodalModel
+from dataset.paired_loader import SourcePairedDataset, paired_collate
+from models.fusion_model import AudioStftPannsOnlyModel
 from models.source_encoders import build_source_encoders
 from settings import RunConfig
-from tasks.ibot_trainer import IbotTrainer
 from tasks.trainer import MultimodalTrainer
 from utils.huggingface_results import upload_artifact_if_enabled, upload_result_files
 
@@ -26,7 +25,7 @@ UPLOAD_CONFIG_PATH = Path(__file__).parent / "config" / "artifact_upload_config.
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run STFT-dB + PANNS CNN6 (Audio) + MobileNetV2 (Video) Multimodal Fusion.")
+    parser = argparse.ArgumentParser(description="Run Single-Modality Audio Only (STFT-dB + PANNS CNN6 Unfrozen).")
     parser.add_argument(
         "--config",
         type=Path,
@@ -57,16 +56,14 @@ def main() -> None:
     torch.manual_seed(config.training.seed)
     device = resolve_device(config.training.device)
 
-    # Build PANNS CNN6 for Audio & MobileNetV2 for Video
+    # Build PANNS CNN6 for Audio
     audio_encoder, video_encoder = build_source_encoders(config)
 
-    # Instantiate STFT dB + PANNS CNN6 (Audio) + MobileNetV2 (Video) Multimodal Model
-    model = StftPannsMobileNetMultimodalModel(
+    # Instantiate Single-Modality Audio STFT + PANNS CNN6 Model
+    model = AudioStftPannsOnlyModel(
         audio_panns_encoder=audio_encoder.to(device),
-        video_mobilenet_encoder=video_encoder.to(device),
         d_model=config.model.d_model,
         num_heads=config.model.num_heads,
-        encoder_mode=config.model.encoder_mode,
         dropout=config.model.dropout,
     ).to(device)
 
