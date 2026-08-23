@@ -67,7 +67,12 @@ class RawSTFT256kTransform(nn.Module):
 
         # 4. Reshape to 4D Tensor [Batch, 1, 2049, Time_Frames]
         db_spec = db_spec.unsqueeze(1)
-        return db_spec
+
+        # 5. Normalize Spectrogram to [-1.0, 1.0] zero-centered scale for fast convergence
+        db_min = db_spec.amin(dim=(2, 3), keepdim=True)
+        db_max = db_spec.amax(dim=(2, 3), keepdim=True)
+        db_norm = 2.0 * (db_spec - db_min) / (db_max - db_min + 1e-6) - 1.0
+        return db_norm
 
 
 class FrequencyDomainAttention(nn.Module):
