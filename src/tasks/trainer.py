@@ -147,6 +147,8 @@ def plot_learning_curves(history_csv_path: Path, output_dir: Path) -> None:
 
     import matplotlib
     matplotlib.use("Agg")
+    logging.getLogger("matplotlib").setLevel(logging.ERROR)
+    logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
