@@ -1,4 +1,4 @@
-"""Method 3 (GW-AVF) & Multimodal entry point: train, select by validation, then test holdout."""
+"""Method 4 (R-BPMD) & Multimodal entry point: train, select by validation, then test holdout."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 
 from config.artifact_upload_config import ArtifactUploadConfig
 from dataset.paired_loader import SourcePairedDataset, SourceUnlabeledVideoDataset, paired_collate, unlabeled_video_collate
-from models.fusion_model import GeometryRippleMultimodalModel, SwinSpatialMultimodal
+from models.fusion_model import GeometryRippleMultimodalModel, RobustBilinearMultimodalModel, SwinSpatialMultimodal
 from models.ibot_pretraining import SwinIbotPretrainer
 from models.source_encoders import build_source_encoders
 from settings import RunConfig
@@ -27,7 +27,7 @@ UPLOAD_CONFIG_PATH = Path(__file__).parent / "config" / "artifact_upload_config.
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run GW-AVF Geometry Water-Ripple Cross-Attention & Multimodal Fusion.")
+    parser = argparse.ArgumentParser(description="Run R-BPMD Robust Bilinear Pooling with Modality Dropout & Multimodal Fusion.")
     parser.add_argument(
         "--config",
         type=Path,
@@ -35,10 +35,11 @@ def parse_args() -> argparse.Namespace:
         help="Path to a training JSON file. Defaults to config/train_config.json.",
     )
     parser.add_argument(
-        "--use-geometry-ripple",
-        action="store_true",
-        default=True,
-        help="Enable Method 3 (GW-AVF) Geometry & Water-Ripple feature enrichment.",
+        "--method",
+        type=str,
+        default="method4",
+        choices=["method3", "method4", "baseline"],
+        help="Multimodal fusion method to execute. Defaults to method4.",
     )
     return parser.parse_args()
 
@@ -91,7 +92,17 @@ def main() -> None:
         if device.type == "cuda":
             torch.cuda.empty_cache()
 
-    if args.use_geometry_ripple:
+    if args.method == "method4":
+        model = RobustBilinearMultimodalModel(
+            audio_encoder,
+            video_encoder,
+            d_model=config.model.d_model,
+            num_heads=config.model.num_heads,
+            encoder_mode=config.model.encoder_mode,
+            dropout=config.model.dropout,
+            drop_prob=0.15,
+        ).to(device)
+    elif args.method == "method3":
         model = GeometryRippleMultimodalModel(
             audio_encoder,
             video_encoder,

@@ -18,7 +18,8 @@ Hệ thống nghiên cứu & xây dựng các mô hình AI Đa thức (**Multimo
 
 ## 🌿 Danh sách các Nhánh Thí nghiệm (Branches)
 
-* **`exp/geometry-water-ripple-cross-attn`** *(Nhánh hiện tại - Phương pháp 3)*: Tự động trích xuất đặc trưng **Sóng nước (Water Ripples)** & **Mật độ hình học đàn cá (Delaunay Flocking Geometry)** kết hợp với Cross-Attention Audio-Visual. Tự động nén & đẩy toàn bộ artifacts lên Hugging Face Dataset **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.
+* **`exp/robust-bilinear-pooling-modality-dropout`** *(Nhánh hiện tại - Phương pháp 4)*: Kết hợp **Multi-level Factorized Bilinear Pooling (MFB)** & **Modality Dropout** chống mất/nhiễu kênh tín hiệu. Tự động nén & đẩy toàn bộ artifacts lên Hugging Face Dataset **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.
+* **`exp/geometry-water-ripple-cross-attn`** *(Phương pháp 3)*: Tự động trích xuất đặc trưng **Sóng nước (Water Ripples)** & **Mật độ hình học đàn cá (Delaunay Flocking Geometry)** kết hợp với Cross-Attention Audio-Visual.
 * **`exp/swin-tiny-ibot-spatial-pretrain`**: Pretraining tự giám sát iBOT SSL trên khung hình giữa của tập train không nhãn.
 * **`exp/stft256k-spatial-video-cross-attn`**: Biến đổi kênh âm thanh 256k STFT high-res tokens + Automatic Mixed Precision (AMP FP16).
 * **`exp/dinov2-spatial-visual-tokens-cross-attn`**: Sử dụng DINOv2 ViT visual backbone tự giám sát từ Meta.
@@ -30,7 +31,8 @@ Hệ thống nghiên cứu & xây dựng các mô hình AI Đa thức (**Multimo
 ## 🚀 Hướng dẫn Nhanh Khởi chạy Thử nghiệm
 
 Xem hướng dẫn chi tiết từng bước cho môi trường Marimo Cloud tại:  
-👉 [`midframe_audio_cross_attention/README_MARIMO.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/midframe_audio_cross_attention/README_MARIMO.md)
+👉 [`midframe_audio_cross_attention/README_MARIMO.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/midframe_audio_cross_attention/README_MARIMO.md)  
+👉 [`midframe_audio_cross_attention/CONFIG_GUIDE.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/midframe_audio_cross_attention/CONFIG_GUIDE.md)
 
 Lệnh chạy chính:
 ```bash

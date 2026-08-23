@@ -1,6 +1,6 @@
-# Method 3 (GW-AVF): Geometry & Water-Ripple Audio-Visual Cross-Attention (Marimo Guide)
+# Method 4 (R-BPMD): Robust Factorized Bilinear Pooling with Modality Dropout (Marimo Guide)
 
-Biển hướng dẫn này dành cho **Nhánh `exp/geometry-water-ripple-cross-attn`**, triển khai **Phương pháp 3 (GW-AVF)**: Tự động trích xuất đặc trưng **Sóng nước (Water Ripples)** & **Mật độ hình học đàn cá (Delaunay Flocking Geometry)** trên lưới $14 \times 14$ không gian, dung hợp với $6$ audio tokens thông qua Cross-Attention, và tự động nén/upload kết quả đầy đủ lên **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.
+Biển hướng dẫn này dành cho **Nhánh `exp/robust-bilinear-pooling-modality-dropout`**, triển khai **Phương pháp 4 (R-BPMD)**: Kết hợp **Multi-level Factorized Bilinear Pooling (MFB)** và **Modality Dropout** (xác suất $p_{\text{drop}} = 0.15$ loại bỏ ngẫu nhiên 1 kênh Audio/Visual trong khi train) giúp mô hình đạt độ bền cao khi cảm biến/ống kính camera bị lóa hoặc âm thanh bị nhiễu tĩnh. Tự động nén & upload kết quả đầy đủ lên **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.
 
 > 📖 **Hướng dẫn chi tiết từng tham số cấu hình JSON**: Xem tài liệu [`CONFIG_GUIDE.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/midframe_audio_cross_attention/CONFIG_GUIDE.md).
 
@@ -10,11 +10,11 @@ Biển hướng dẫn này dành cho **Nhánh `exp/geometry-water-ripple-cross-a
 
 ```bash
 cd /marimo
-git clone --branch exp/geometry-water-ripple-cross-attn --single-branch https://github.com/manhmitcf/Multimodal_Custom_Models.git
+git clone --branch exp/robust-bilinear-pooling-modality-dropout --single-branch https://github.com/manhmitcf/Multimodal_Custom_Models.git
 cd Multimodal_Custom_Models
 git branch --show-current
 ```
-*Lưu ý: Lệnh `git branch` phải hiển thị đúng `exp/geometry-water-ripple-cross-attn`.*
+*Lưu ý: Lệnh `git branch` phải hiển thị đúng `exp/robust-bilinear-pooling-modality-dropout`.*
 
 ---
 
@@ -73,13 +73,13 @@ test -f checkpoints/PANNS_Cnn6_holdout_random_sample_20260729_153012/DL_audio/ch
 hf auth login
 ```
 
-Chạy trực tiếp pipeline thí nghiệm Phương pháp 3:
+Chạy trực tiếp pipeline thí nghiệm Phương pháp 4:
 ```bash
 cd /marimo/Multimodal_Custom_Models/midframe_audio_cross_attention
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
-# Khởi chạy Phương pháp 3 (GW-AVF)
+# Khởi chạy Phương pháp 4 (R-BPMD)
 python main.py
 ```
 
@@ -91,23 +91,23 @@ tail -n +1 -f main.log
 
 ---
 
-## 🏗️ Kiến trúc Phương pháp 3 (GW-AVF) Hoạt động Như thế nào?
+## 🏗️ Kiến trúc Phương pháp 4 (R-BPMD) Hoạt động Như thế nào?
 
 ```text
        Middle Video Frame (RGB)                       Audio 2s (Waveform)
                   │                                            │
-   ┌──────────────┴──────────────┐                       Audio Encoder
-   ▼                             ▼                             │
-SwinTiny (Stage 3)     Geometry & Water-Ripple                 │
-Spatial Tokens Grid    Feature Extractors                      │
-(196 x 384)            (Wavelet & Delaunay)                    │
-   │                             │                             │
-   └──────────────┬──────────────┘                             │
-                  ▼                                            ▼
-     Geometry-Enhanced Visual Tokens ────────────►  Cross-Attention Fusion
-             (196 x d_model)                        (Q=Visual, K,V=Audio)
-                                                               │
-                                                       Classifier (4 classes)
+            Visual Encoder                               Audio Encoder
+                  │                                            │
+                  └─────────────────┬──────────────────────────┘
+                                    │
+                         Modality Dropout Layer
+                   (Randomly drop 15% Audio / Visual)
+                                    │
+                  Factorized Bilinear Pooling (MFB)
+                                    │
+                          Multimodal Representation
+                                    │
+                          Classifier (4 classes)
 ```
 
 ---
