@@ -33,7 +33,7 @@
     "fusion_type": "fbgf"
   },
   "training": {
-    "batch_size": 16,
+    "batch_size": 256,
     "epochs": 100,
     "fusion_learning_rate": 0.001,
     "encoder_learning_rate": 0.0001,
