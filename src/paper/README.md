@@ -1,6 +1,6 @@
-# Tài liệu Chuyên sâu cho Nhánh STFT-dB Image SwinTiny + MobileNetV2 Fusion
+# Tài liệu Chuyên sâu cho Nhánh STFT-dB + PANNS CNN6 (Audio) & MobileNetV2 (Video) Fusion
 
-Thư mục này chứa các tài liệu nghiên cứu tiền đề làm cơ sở cho **Phương pháp Biến đổi Phổ Tần số Cao STFT thành Ảnh dB (STFT-dB Spectrogram Image Transformation)** kết hợp giữa **SwinTiny (Audio Spectrogram Branch)** và **MobileNetV2 (Video Branch)**.
+Thư mục này chứa các tài liệu nghiên cứu tiền đề làm cơ sở cho **Phương pháp Dung hợp Phổ Tần số Cao STFT-dB** kết hợp giữa **PANNs CNN6 (Audio Branch)** và **MobileNetV2 (Video Branch)**.
 
 ---
 
@@ -8,32 +8,27 @@ Thư mục này chứa các tài liệu nghiên cứu tiền đề làm cơ sở
 
 ```text
        Audio Waveform 2s (64 kHz)                     Middle Video Frame (RGB)
-                  │                                              │
-      STFT-dB Image Transform                              MobileNetV2
- (n_fft=2048, hop=512 -> 3x224x224)                       Video Feature
-                  │                                              │
-           SwinTiny Encoder                                      │
-        Stage 3 Spatial Tokens                                   │
-             (196 x 384)                                         │
-                  │                                              │
-                  └──────────────────────┬───────────────────────┘
-                                         │
-                             Cross-Attention Fusion Head
-                             (Video Q attends Audio K,V)
-                                         │
-                               Classifier (4 classes)
+            │              │                                     │
+       PANNS CNN6    STFT-dB Image                           MobileNetV2
+      Audio Tokens   (n_fft=2048 -> 3x224x224)              Video Feature
+       (6 x 512)           │                                 (1280)
+            │         STFT Feature Conv                          │
+            │           (1 x 256)                                │
+            └──────────────┬─────────────────────────────────────┘
+                           │
+               Cross-Attention Fusion Head
+             (Video Q attends 7 Audio Tokens)
+                           │
+                 Classifier (4 classes)
 ```
 
 ---
 
 ## 💡 Ý nghĩa Kỹ thuật (Key Technical Innovations)
 
-1. **Biến đổi STFT-dB Spectrogram thành Ảnh 3 Kênh (224x224)**:
-   * Khắc phục triệt để điểm nghẽn mất mát dải phổ cao của Log-Mel Spectrogram thông thường (PANNs CNN6 85%).
-   * Chuyển đổi toàn bộ miền phổ tần số $256,000$ điểm về ảnh 3 kênh $224 \times 224$ px bảo toàn $100\%$ các vi va chạm tần số khi cá đớp mồi ($2\text{ kHz} - 8\text{ kHz}$).
+1. **Kênh Âm thanh Kép (PANNS CNN6 + STFT-dB Spectrogram)**:
+   * Sử dụng **PANNs CNN6** pretrained tốt nhất làm Audio Token Encoder chính ($6$ tokens $512$d).
+   * Bổ sung mô-đun biến đổi **STFT-dB Spectrogram ($224 \times 224$)** trích xuất đặc trưng phổ cao nén $256,000$ điểm phổ, bổ sung $1$ token phổ sắc nét giúp khắc phục triệt để mốc $85\%$ F1.
 
-2. **Kênh Âm thanh Siêu Năng lực (SwinTiny Audio Spectrogram Encoder)**:
-   * Sử dụng backbone SwinTiny để trích xuất $196$ spatial/spectral tokens ($14 \times 14$) từ ảnh phổ STFT-dB.
-
-3. **Kênh Video Siêu Nhẹ (MobileNetV2 Video Encoder)**:
+2. **Kênh Video Siêu Nhẹ (MobileNetV2 Video Encoder)**:
    * Giữ kênh Video gọn nhẹ tối đa với MobileNetV2 (~3.5M tham số), đảm bảo mô hình Đa thức chạy siêu nhanh và tiết kiệm VRAM.

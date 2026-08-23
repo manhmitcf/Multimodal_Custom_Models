@@ -1,4 +1,4 @@
-"""STFT dB Image SwinTiny (Audio) + MobileNetV2 (Video) Multimodal Fusion Entry Point."""
+"""STFT dB + PANNS CNN6 (Audio) + MobileNetV2 (Video) Multimodal Fusion Entry Point."""
 
 from __future__ import annotations
 
@@ -13,9 +13,8 @@ from torch.utils.data import DataLoader
 
 from config.artifact_upload_config import ArtifactUploadConfig
 from dataset.paired_loader import SourcePairedDataset, SourceUnlabeledVideoDataset, paired_collate, unlabeled_video_collate
-from models.fusion_model import StftSwinMobileNetMultimodalModel
-from models.source_encoders import build_source_encoders, SourceSwinSpatialEncoder, SourceVideoFeatureEncoder
-from models.reference_bridge import load_video_reference
+from models.fusion_model import StftPannsMobileNetMultimodalModel
+from models.source_encoders import build_source_encoders
 from settings import RunConfig
 from tasks.ibot_trainer import IbotTrainer
 from tasks.trainer import MultimodalTrainer
@@ -27,7 +26,7 @@ UPLOAD_CONFIG_PATH = Path(__file__).parent / "config" / "artifact_upload_config.
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run STFT-dB Image SwinTiny (Audio) + MobileNetV2 (Video) Multimodal Fusion.")
+    parser = argparse.ArgumentParser(description="Run STFT-dB + PANNS CNN6 (Audio) + MobileNetV2 (Video) Multimodal Fusion.")
     parser.add_argument(
         "--config",
         type=Path,
@@ -58,29 +57,13 @@ def main() -> None:
     torch.manual_seed(config.training.seed)
     device = resolve_device(config.training.device)
 
-    # Load SwinTiny for Audio STFT dB Image Branch & MobileNetV2 for Video Branch
-    video_ref = load_video_reference(config.references.video_repo)
-    
-    # 1. SwinTiny Backbone for Audio STFT-dB Spectrogram Image
-    swin_inner = video_ref.FishVideoDataLoader.build_model("swin_tiny")
-    swin_ckpt = config.references.video_repo.parent / "checkpoints/SwinTiny_holdout_random_sample_20260729_153012/DL_video/checkpoint/swin_tiny/video_best.pt"
-    if swin_ckpt.exists():
-        ckpt = torch.load(swin_ckpt, map_location="cpu", weights_only=False)
-        swin_inner.load_state_dict(ckpt["model_state_dict"], strict=True)
-    audio_swin_encoder = SourceSwinSpatialEncoder(swin_inner)
+    # Build PANNS CNN6 for Audio & MobileNetV2 for Video
+    audio_encoder, video_encoder = build_source_encoders(config)
 
-    # 2. MobileNetV2 Backbone for Middle RGB Video Frame
-    mobilenet_inner = video_ref.FishVideoDataLoader.build_model("mobilenet_v2")
-    mobilenet_ckpt = config.references.video_repo.parent / "checkpoints/MobileNetV2_holdout_random_sample_20260729_153012/DL_video/checkpoint/mobilenet_v2/video_best.pt"
-    if mobilenet_ckpt.exists():
-        ckpt = torch.load(mobilenet_ckpt, map_location="cpu", weights_only=False)
-        mobilenet_inner.load_state_dict(ckpt["model_state_dict"], strict=True)
-    video_mobilenet_encoder = SourceVideoFeatureEncoder(mobilenet_inner, "mobilenet_v2")
-
-    # 3. Instantiate STFT dB Swin-MobileNet Multimodal Model
-    model = StftSwinMobileNetMultimodalModel(
-        audio_swin_encoder=audio_swin_encoder.to(device),
-        video_mobilenet_encoder=video_mobilenet_encoder.to(device),
+    # Instantiate STFT dB + PANNS CNN6 (Audio) + MobileNetV2 (Video) Multimodal Model
+    model = StftPannsMobileNetMultimodalModel(
+        audio_panns_encoder=audio_encoder.to(device),
+        video_mobilenet_encoder=video_encoder.to(device),
         d_model=config.model.d_model,
         num_heads=config.model.num_heads,
         encoder_mode=config.model.encoder_mode,

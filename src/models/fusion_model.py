@@ -1,4 +1,4 @@
-"""Multimodal fusion architectures: baseline, spatial, Method 3 GW-AVF, Method 4 R-BPMD, and STFT-dB Swin-MobileNet."""
+"""Multimodal fusion architectures: baseline, spatial, Method 3 GW-AVF, Method 4 R-BPMD, and STFT-dB PANNS-MobileNet."""
 
 from __future__ import annotations
 
@@ -269,14 +269,25 @@ class SwinSpatialMultimodal(nn.Module):
         return (logits, attention) if return_attention else logits
 
 
-class StftSwinMobileNetFusionHead(nn.Module):
-    """Cross-Attention Fusion Head: MobileNetV2 Video Query attends to SwinTiny Audio STFT-dB Spatial Tokens."""
+class StftPannsMobileNetFusionHead(nn.Module):
+    """Cross-Attention Fusion Head: MobileNetV2 Video Query attends to PANNS CNN6 Audio Tokens + STFT-dB Spectrogram Features."""
 
-    def __init__(self, audio_spatial_dim: int = 384, video_dim: int = 1280, d_model: int = 256, num_heads: int = 4, dropout: float = 0.1) -> None:
+    def __init__(self, audio_dim: int = 512, video_dim: int = 1280, d_model: int = 256, num_heads: int = 4, dropout: float = 0.1) -> None:
         super().__init__()
-        self.audio_proj = nn.Linear(audio_spatial_dim, d_model)
+        self.audio_proj = nn.Linear(audio_dim, d_model)
         self.video_proj = nn.Linear(video_dim, d_model)
-        self.audio_pos = nn.Parameter(Tensor(1, 196, d_model).normal_(mean=0.0, std=0.02))
+        self.stft_conv = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(64, d_model),
+        )
+        self.audio_pos = nn.Parameter(Tensor(1, 6, d_model).normal_(mean=0.0, std=0.02))
 
         self.cross_attn = nn.MultiheadAttention(d_model, num_heads, dropout=dropout, batch_first=True)
         self.cross_norm = nn.LayerNorm(d_model)
@@ -294,37 +305,43 @@ class StftSwinMobileNetFusionHead(nn.Module):
             nn.Linear(d_model, 4),
         )
 
-    def forward(self, audio_tokens: Tensor, video_feature: Tensor) -> tuple[Tensor, Tensor]:
-        # audio_tokens: [B, 196, 384] -> [B, 196, d_model]
-        audio_embed = self.audio_proj(audio_tokens) + self.audio_pos
+    def forward(self, audio_tokens: Tensor, video_feature: Tensor, stft_db_img: Tensor) -> tuple[Tensor, Tensor]:
+        # PANNS Audio Tokens: [B, 6, 512] -> [B, 6, d_model]
+        panns_embed = self.audio_proj(audio_tokens) + self.audio_pos
 
-        # video_feature: [B, 1280] -> [B, 1, d_model]
+        # STFT dB Image Feature: [B, 3, 224, 224] -> [B, 1, d_model]
+        stft_embed = self.stft_conv(stft_db_img).unsqueeze(1)
+
+        # Combined Audio Representation (6 PANNS tokens + 1 STFT token = 7 tokens)
+        combined_audio = torch.cat([panns_embed, stft_embed], dim=1) # [B, 7, d_model]
+
+        # Video Query: MobileNetV2 [B, 1280] -> [B, 1, d_model]
         video_embed = self.video_proj(video_feature).unsqueeze(1)
 
-        # Cross Attention: Video Query (1 token) attends to Audio STFT Spatial Tokens (196 tokens)
-        attended, attention = self.cross_attn(video_embed, audio_embed, audio_embed, need_weights=True)
+        # Cross Attention: Video Query attends to 7 Audio/STFT Tokens
+        attended, attention = self.cross_attn(video_embed, combined_audio, combined_audio, need_weights=True)
         fused_video = self.cross_norm(video_embed + attended).squeeze(1)
 
-        # Pool Audio STFT Tokens
-        audio_pooled = audio_embed.mean(dim=1)
+        # Pool Audio Tokens
+        audio_pooled = combined_audio.mean(dim=1)
 
-        # Concatenate Audio + Video fused representation
+        # Concatenate Video + Audio representation
         combined = torch.cat([fused_video, audio_pooled], dim=1)
         logits = self.classifier(combined)
         return logits, attention
 
 
-class StftSwinMobileNetMultimodalModel(nn.Module):
-    """Audio (STFT dB Image -> SwinTiny) + Video (Middle Frame -> MobileNetV2) Multimodal Fusion."""
+class StftPannsMobileNetMultimodalModel(nn.Module):
+    """Audio (PANNS CNN6 + STFT dB Image) + Video (MobileNetV2) Multimodal Model."""
 
-    def __init__(self, audio_swin_encoder: nn.Module, video_mobilenet_encoder: nn.Module, d_model: int = 256, num_heads: int = 4, encoder_mode: str = "frozen", dropout: float = 0.1) -> None:
+    def __init__(self, audio_panns_encoder: nn.Module, video_mobilenet_encoder: nn.Module, d_model: int = 256, num_heads: int = 4, encoder_mode: str = "frozen", dropout: float = 0.1) -> None:
         super().__init__()
         self.stft_transform = STFTTodBImageTransform(n_fft=2048, hop_length=512, image_size=224)
-        self.audio_swin_encoder = audio_swin_encoder
+        self.audio_panns_encoder = audio_panns_encoder
         self.video_mobilenet_encoder = video_mobilenet_encoder
         self.encoder_mode = encoder_mode
-        self.fusion = StftSwinMobileNetFusionHead(
-            audio_spatial_dim=384,
+        self.fusion = StftPannsMobileNetFusionHead(
+            audio_dim=audio_panns_encoder.feature_dim,
             video_dim=video_mobilenet_encoder.feature_dim,
             d_model=d_model,
             num_heads=num_heads,
@@ -333,20 +350,20 @@ class StftSwinMobileNetMultimodalModel(nn.Module):
         self.configure_encoder_mode()
 
     def configure_encoder_mode(self) -> None:
-        for encoder in (self.audio_swin_encoder, self.video_mobilenet_encoder):
+        for encoder in (self.audio_panns_encoder, self.video_mobilenet_encoder):
             for parameter in encoder.parameters():
                 parameter.requires_grad = False
 
     def forward(self, waveforms: Tensor, images: Tensor, return_attention: bool = False) -> Tensor | tuple[Tensor, Tensor]:
-        # 1. Audio Waveform -> 3-channel STFT dB Image [B, 3, 224, 224]
+        # 1. PANNS CNN6 Audio Tokens [B, 6, 512]
+        audio_tokens = self.audio_panns_encoder(waveforms)
+
+        # 2. STFT dB Spectrogram Image [B, 3, 224, 224]
         stft_db_img = self.stft_transform(waveforms)
 
-        # 2. Audio Tokens via SwinTiny Encoder -> [B, 196, 384]
-        audio_tokens = self.audio_swin_encoder(stft_db_img)
-
-        # 3. Video Feature via MobileNetV2 -> [B, 1280]
+        # 3. MobileNetV2 Video Feature [B, 1280]
         video_feature = self.video_mobilenet_encoder(images)
 
         # 4. Multimodal Fusion
-        logits, attention = self.fusion(audio_tokens, video_feature)
+        logits, attention = self.fusion(audio_tokens, video_feature, stft_db_img)
         return (logits, attention) if return_attention else logits
