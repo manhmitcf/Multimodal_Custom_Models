@@ -88,7 +88,7 @@ class MultimodalTrainer:
 
         self.history_csv_path = self.output_dir / "history.csv"
 
-    def _init_output_directory() -> None:
+    def _init_output_directory(self) -> None:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         # Copy split CSVs into output directory to make it completely self-contained
         if self.split_dir and self.split_dir.exists():
