@@ -57,13 +57,28 @@ def main() -> None:
     torch.manual_seed(config.training.seed)
     device = resolve_device(config.training.device)
 
-    # Build PANNS CNN6 Audio Encoder directly
+    # Build PANNS CNN6 Audio Encoder directly using baseline reference
     audio_ref = load_audio_reference(config.references.audio_repo)
-    audio_inner = audio_ref.FishAudioDataLoader.build_model("panns_cnn6")
+    frontend_config = audio_ref.AudioFeaturesConfig(
+        sample_rate=64000,
+        window_size=2048,
+        hop_size=1024,
+        mel_bins=128,
+        fmin=1,
+        fmax=32000,
+        time_drop_width=64,
+        time_stripes_num=2,
+        freq_drop_width=8,
+        freq_stripes_num=2,
+    )
+    audio_model = audio_ref.AudioModel(
+        frontend=audio_ref.AudioFrontend(config=frontend_config),
+        backbone=audio_ref.PANNS_Cnn6(classes_num=4),
+    )
     if config.checkpoints.audio.exists():
         ckpt = torch.load(config.checkpoints.audio, map_location="cpu", weights_only=False)
-        audio_inner.load_state_dict(ckpt["model_state_dict"], strict=True)
-    audio_encoder = SourceAudioTokenEncoder(audio_inner)
+        audio_model.load_state_dict(ckpt["model_state_dict"], strict=True)
+    audio_encoder = SourceAudioTokenEncoder(audio_model)
 
     # Instantiate Single-Modality Audio STFT + PANNS CNN6 Model
     model = AudioStftPannsOnlyModel(
