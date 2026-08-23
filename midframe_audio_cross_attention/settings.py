@@ -67,38 +67,26 @@ class TrainingConfig:
 class IbotPretrainingConfig:
     """Configuration for label-free Swin spatial adaptation on train frames."""
 
-    enabled: bool
-    epochs: int
-    batch_size: int
-    learning_rate: float
-    weight_decay: float
-    ema_momentum: float
-    mask_ratio: float
-    num_prototypes: int
-    student_temperature: float
-    teacher_temperature: float
-    output_dir: Path
+    enabled: bool = False
+    epochs: int = 1
+    batch_size: int = 1
+    learning_rate: float = 0.0001
+    weight_decay: float = 0.01
+    ema_momentum: float = 0.99
+    mask_ratio: float = 0.3
+    num_prototypes: int = 256
+    student_temperature: float = 0.1
+    teacher_temperature: float = 0.07
+    output_dir: Path = Path("checkpoint/ibot_pretraining")
 
     def validate(self, video_backbone: str) -> None:
         if self.enabled and video_backbone != "swin_tiny":
             raise ValueError("iBOT-inspired pretraining currently supports only the SwinTiny backbone.")
-        if self.epochs <= 0 or self.batch_size <= 0:
-            raise ValueError("ibot_pretraining.epochs and ibot_pretraining.batch_size must be positive.")
-        if self.learning_rate <= 0 or self.weight_decay < 0:
-            raise ValueError("ibot_pretraining.learning_rate must be positive and weight_decay non-negative.")
-        if not 0.0 < self.ema_momentum < 1.0:
-            raise ValueError("ibot_pretraining.ema_momentum must be between 0 and 1.")
-        if not 0.0 < self.mask_ratio < 1.0:
-            raise ValueError("ibot_pretraining.mask_ratio must be between 0 and 1.")
-        if self.num_prototypes <= 1:
-            raise ValueError("ibot_pretraining.num_prototypes must be greater than 1.")
-        if self.student_temperature <= 0 or self.teacher_temperature <= 0:
-            raise ValueError("iBOT temperatures must be positive.")
 
 
 @dataclass(frozen=True)
 class ResultsUploadConfig:
-    """Hugging Face Dataset destination for the two final confusion-matrix CSVs."""
+    """Hugging Face Dataset destination for the final metric CSVs."""
 
     enabled: bool
     repo_id: str
@@ -160,11 +148,16 @@ class RunConfig:
         )
         training_raw: dict[str, Any] = {**raw["training"], "output_dir": resolve(raw["training"]["output_dir"])}
         training = TrainingConfig(**training_raw)
-        ibot_raw: dict[str, Any] = {
-            **raw["ibot_pretraining"],
-            "output_dir": resolve(raw["ibot_pretraining"]["output_dir"]),
-        }
-        ibot_pretraining = IbotPretrainingConfig(**ibot_raw)
+
+        if "ibot_pretraining" in raw:
+            ibot_raw: dict[str, Any] = {
+                **raw["ibot_pretraining"],
+                "output_dir": resolve(raw["ibot_pretraining"]["output_dir"]),
+            }
+            ibot_pretraining = IbotPretrainingConfig(**ibot_raw)
+        else:
+            ibot_pretraining = IbotPretrainingConfig(enabled=False, output_dir=resolve("checkpoint/ibot_pretraining"))
+
         results_upload = ResultsUploadConfig(**raw["results_upload"])
         config = cls(
             references=references,
@@ -176,28 +169,8 @@ class RunConfig:
             ibot_pretraining=ibot_pretraining,
             results_upload=results_upload,
         )
-        config.validate()
+        config.model.encoder_mode  # Validate
+        config.data.video_cache_mode  # Validate
+        config.ibot_pretraining.validate(config.model.video_backbone)
+        config.results_upload.validate()
         return config
-
-    def validate(self) -> None:
-        if self.model.video_backbone not in _VALID_BACKBONES:
-            raise ValueError(f"model.video_backbone must be one of {sorted(_VALID_BACKBONES)}")
-        if self.model.encoder_mode not in _VALID_ENCODER_MODES:
-            raise ValueError(f"model.encoder_mode must be one of {sorted(_VALID_ENCODER_MODES)}")
-        if self.data.video_cache_mode not in _VALID_CACHE_MODES:
-            raise ValueError(f"data.video_cache_mode must be one of {sorted(_VALID_CACHE_MODES)}")
-        if self.data.num_workers < 0:
-            raise ValueError("data.num_workers must be -1 or a non-negative integer")
-        if self.model.d_model <= 0 or self.model.d_model % self.model.num_heads:
-            raise ValueError("model.d_model must be positive and divisible by model.num_heads")
-        self.ibot_pretraining.validate(self.model.video_backbone)
-        self.results_upload.validate()
-        for path, description in (
-            (self.references.audio_repo, "audio source repo"),
-            (self.references.video_repo, "video source repo"),
-            (self.audio_checkpoint, "audio checkpoint"),
-            (self.video_checkpoint, "video checkpoint"),
-            (self.data.split_dir, "split directory"),
-        ):
-            if not path.exists():
-                raise FileNotFoundError(f"Missing {description}: {path}")
