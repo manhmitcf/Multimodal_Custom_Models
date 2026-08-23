@@ -1,6 +1,6 @@
-# STFT 256k Raw 2049 Bins with Frequency-Domain Attention & MobileNetV2 Factorized Bilinear Gated Fusion (Marimo Guide)
+# STFT 256k Raw 2049 Bins with Frequency-Domain Attention & MobileNetV2 (SE 1D Recalibration) Factorized Bilinear Gated Fusion (Marimo Guide)
 
-Biển hướng dẫn này dành cho **Nhánh `exp/stft256k-raw2049-freqattn-mobilenetv2-fbgf`**, triển khai **Phương pháp Dung hợp Đa thức Nâng cao Tự Định Nghĩa**: Tích hợp **Lọc Pre-Emphasis ($\alpha=0.97$)**, **Phổ Raw STFT 2049 Dải Tần số** ($256\text{ kHz}, n\_fft=4096, win=4096, hop=2048, \text{Hamming}$, KHÔNG nén Mel, KHÔNG mã hóa file ảnh RGB), **Cơ chế Chú ý Miền Tần số (Frequency-Domain Attention)** và mạng **Depthwise-Separable Audio CNN**, dung hợp với kênh Video **MobileNetV2** siêu nhẹ (~3.5M params) thông qua **Factorized Bilinear Gated Fusion (FBGF / GMF)**, và tự động nén/upload kết quả đầy đủ lên **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.
+Biển hướng dẫn này dành cho **Nhánh `exp/stft256k-raw2049-freqattn-mobilenetv2-se-fbgf`**, triển khai **Phương pháp Dung hợp Đa thức Nâng cao Tự Định Nghĩa**: Tích hợp **Lọc Pre-Emphasis ($\alpha=0.97$)**, **Phổ Raw STFT 2049 Dải Tần số** ($256\text{ kHz}, n\_fft=4096, win=4096, hop=2048, \text{Hamming}$, KHÔNG nén Mel), **Cơ chế Chú ý Miền Tần số (Frequency-Domain Attention)** và mạng **Depthwise-Separable Audio CNN**, dung hợp với kênh Video **MobileNetV2** qua module **Squeeze-and-Excitation 1D Channel Recalibration (Mechanism 1)** thông qua **Factorized Bilinear Gated Fusion (FBGF / GMF)**, và tự động nén/upload kết quả đầy đủ lên **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.
 
 > 📖 **Hướng dẫn chi tiết từng tham số cấu hình JSON**: Xem tài liệu [`CONFIG_GUIDE.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/src/CONFIG_GUIDE.md).
 
@@ -10,18 +10,18 @@ Biển hướng dẫn này dành cho **Nhánh `exp/stft256k-raw2049-freqattn-mob
 
 ```bash
 cd /marimo
-git clone --branch exp/stft256k-raw2049-freqattn-mobilenetv2-fbgf --single-branch https://github.com/manhmitcf/Multimodal_Custom_Models.git
+git clone --branch exp/stft256k-raw2049-freqattn-mobilenetv2-se-fbgf --single-branch https://github.com/manhmitcf/Multimodal_Custom_Models.git
 cd Multimodal_Custom_Models
 git branch --show-current
 ```
-*Lưu ý: Lệnh `git branch` phải hiển thị đúng `exp/stft256k-raw2049-freqattn-mobilenetv2-fbgf`.*
+*Lưu ý: Lệnh `git branch` phải hiển thị đúng `exp/stft256k-raw2049-freqattn-mobilenetv2-se-fbgf`.*
 
 Hoặc nếu đã có sẵn thư mục repository trong máy/server:
 ```bash
 cd /marimo/Multimodal_Custom_Models
 git fetch origin
-git checkout exp/stft256k-raw2049-freqattn-mobilenetv2-fbgf
-git pull origin exp/stft256k-raw2049-freqattn-mobilenetv2-fbgf
+git checkout exp/stft256k-raw2049-freqattn-mobilenetv2-se-fbgf
+git pull origin exp/stft256k-raw2049-freqattn-mobilenetv2-se-fbgf
 ```
 
 ---
@@ -87,7 +87,7 @@ cd /marimo/Multimodal_Custom_Models/src
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
-# Khởi chạy Pipeline Custom Raw STFT 2049 F-Attn MobileNetV2 FBGF Fusion
+# Khởi chạy Pipeline Custom Raw STFT 2049 F-Attn MobileNetV2 (SE 1D Recalibration) FBGF Fusion
 python main.py
 ```
 
@@ -96,23 +96,3 @@ Nếu chạy ẩn trong background:
 nohup python3 main.py > main.log 2>&1 &
 tail -n +1 -f main.log
 ```
-
----
-
-## 📂 Danh sách Kết quả Đầu ra (Outputs Checkpoint Artifacts)
-
-Thư mục kết quả `checkpoint/` sẽ được sinh ra đầy đủ 100%:
-
-```text
-checkpoint/
-  ├── splits/                          <- Thư mục chứa train.csv, val.csv, test.csv
-  ├── best.pt                          <- Checkpoint PyTorch lưu model_state_dict & val_macro_f1 tốt nhất
-  ├── history.csv                      <- Log lịch sử từng epoch (loss, acc, F1, 16 cột CM)
-  ├── summary_results.csv              <- Bảng tổng hợp F1 & Accuracy tập Test Holdout, số lượng tham số & FLOPs
-  ├── best_val_metrics.json            <- Chỉ số chi tiết Validation (Macro-F1, Accuracy, Loss, Profiling)
-  ├── test_metrics.json                <- Chỉ số chi tiết Holdout Test (Macro-F1, Accuracy, Loss, Profiling)
-  ├── best_val_confusion_matrix.csv    <- Ma trận nhầm lẫn Validation 4x4 (có nhãn)
-  └── test_confusion_matrix.csv        <- Ma trận nhầm lẫn Holdout Test 4x4 (có nhãn)
-```
-
-Cuối quá trình chạy, toàn bộ thư mục này sẽ được tự động đóng gói thành file `STFT256k_Raw2049_FreqAttn_MobileNetV2_Artifacts.zip` và tải lên repository **[`manhmitcf/fish_result`](https://huggingface.co/datasets/manhmitcf/fish_result)**.

@@ -1,9 +1,9 @@
 {
   "enabled": true,
   "source_dir": "checkpoint",
-  "zip_path": "checkpoint/STFT256k_Raw2049_FreqAttn_MobileNetV2_Artifacts.zip",
+  "zip_path": "checkpoint/STFT256k_Raw2049_FreqAttn_MobileNetV2_SE_Artifacts.zip",
   "repo_id": "manhmitcf/fish_result",
   "repo_type": "dataset",
-  "path_in_repo": "STFT256k_Raw2049_FreqAttn_MobileNetV2_Artifacts.zip",
+  "path_in_repo": "STFT256k_Raw2049_FreqAttn_MobileNetV2_SE_Artifacts.zip",
   "create_repo": true
 }
