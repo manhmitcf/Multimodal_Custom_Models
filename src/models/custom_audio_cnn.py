@@ -66,16 +66,6 @@ class CustomRawStftAudioCNN(nn.Module):
         self.block3 = DepthwiseSeparableConv2d(64, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
         self.block4 = DepthwiseSeparableConv2d(128, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1))
 
-        # Direct STFT Frequency-Profile MLP Projection (guarantees instant high accuracy like MLP baseline)
-        in_mlp_dim = num_freq_bins * 2 if use_std else num_freq_bins
-        self.freq_mlp = nn.Sequential(
-            nn.Linear(in_mlp_dim, 256),
-            nn.BatchNorm1d(256),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.1),
-            nn.Linear(256, feature_dim),
-        )
-
         self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc_proj = nn.Linear(256, feature_dim)
 
@@ -88,13 +78,6 @@ class CustomRawStftAudioCNN(nn.Module):
         else:
             db_spec = input_tensor
 
-        # 1. Compute Direct STFT Frequency Profile (Mean + Std along time axis)
-        batch = db_spec.shape[0]
-        freq_mean = db_spec.mean(dim=-1).view(batch, -1) # [B, 2049]
-        freq_std = db_spec.std(dim=-1).view(batch, -1) # [B, 2049]
-        freq_profile = torch.cat([freq_mean, freq_std], dim=1) # [B, 4098]
-        mlp_features = self.freq_mlp(freq_profile) # [B, feature_dim]
-
         # 2. Apply Frequency-Domain Attention (F-Attn)
         attended_spec = self.freq_attention(db_spec)
 
@@ -106,7 +89,5 @@ class CustomRawStftAudioCNN(nn.Module):
 
         # 4. Global Pooling & Projection -> [B, feature_dim]
         pooled = self.global_pool(x).flatten(1)
-        cnn_features = self.fc_proj(pooled)
-
-        # 5. Dual-Path Residual Fusion (CNN + Direct STFT Frequency MLP)
-        return cnn_features + mlp_features
+        audio_features = self.fc_proj(pooled)
+        return audio_features
