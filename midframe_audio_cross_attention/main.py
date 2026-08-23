@@ -123,15 +123,16 @@ def main() -> None:
     }
 
     trainer = MultimodalTrainer(
-        model,
-        loaders["train"],
-        loaders["val"],
-        loaders["test"],
-        device,
-        config.training.output_dir,
-        config.training.fusion_learning_rate,
-        config.training.encoder_learning_rate,
-        config.training.weight_decay,
+        model=model,
+        train_loader=loaders["train"],
+        val_loader=loaders["val"],
+        test_loader=loaders["test"],
+        device=device,
+        output_dir=config.training.output_dir,
+        fusion_lr=config.training.fusion_learning_rate,
+        encoder_lr=config.training.encoder_learning_rate,
+        weight_decay=config.training.weight_decay,
+        split_dir=config.data.split_dir,
     )
     trainer.fit_then_test(config.training.epochs)
 
