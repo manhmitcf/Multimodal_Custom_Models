@@ -14,7 +14,8 @@ from torch.utils.data import DataLoader
 from config.artifact_upload_config import ArtifactUploadConfig
 from dataset.paired_loader import SourcePairedDataset, paired_collate
 from models.fusion_model import AudioStftPannsOnlyModel
-from models.source_encoders import build_source_encoders
+from models.source_encoders import SourceAudioTokenEncoder
+from models.reference_bridge import load_audio_reference
 from settings import RunConfig
 from tasks.trainer import MultimodalTrainer
 from utils.huggingface_results import upload_artifact_if_enabled, upload_result_files
@@ -56,8 +57,13 @@ def main() -> None:
     torch.manual_seed(config.training.seed)
     device = resolve_device(config.training.device)
 
-    # Build PANNS CNN6 for Audio
-    audio_encoder, video_encoder = build_source_encoders(config)
+    # Build PANNS CNN6 Audio Encoder directly
+    audio_ref = load_audio_reference(config.references.audio_repo)
+    audio_inner = audio_ref.FishAudioDataLoader.build_model("panns_cnn6")
+    if config.checkpoints.audio.exists():
+        ckpt = torch.load(config.checkpoints.audio, map_location="cpu", weights_only=False)
+        audio_inner.load_state_dict(ckpt["model_state_dict"], strict=True)
+    audio_encoder = SourceAudioTokenEncoder(audio_inner)
 
     # Instantiate Single-Modality Audio STFT + PANNS CNN6 Model
     model = AudioStftPannsOnlyModel(

@@ -132,13 +132,9 @@ class RunConfig:
         )
         model = ModelConfig(**raw["model"])
         checkpoints = raw["checkpoints"]
-        try:
-            video_checkpoint_value = checkpoints["video_by_backbone"][model.video_backbone]
-        except KeyError as error:
-            raise ValueError(
-                "checkpoints.video_by_backbone must define a path for "
-                f"model.video_backbone={model.video_backbone!r}"
-            ) from error
+        video_by_backbone = checkpoints.get("video_by_backbone", {})
+        if model.video_backbone in video_by_backbone:
+            video_checkpoint_value = video_by_backbone[model.video_backbone]
         data = DataConfig(
             split_dir=resolve(raw["data"]["split_dir"]),
             cache_audio=bool(raw["data"]["cache_audio"]),
