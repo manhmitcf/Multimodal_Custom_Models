@@ -1,4 +1,4 @@
-"""Multimodal & Single-Modality fusion architectures: baseline, spatial, Method 3 GW-AVF, Method 4 R-BPMD, STFT-dB PANNS-MobileNet, and Audio-Only STFT PANNS."""
+"""Multimodal & Single-Modality fusion architectures: baseline, spatial, Method 3 GW-AVF, Method 4 R-BPMD, STFT-dB PANNS-MobileNet, and Pure PANNS CNN6 Only."""
 
 from __future__ import annotations
 
@@ -269,139 +269,13 @@ class SwinSpatialMultimodal(nn.Module):
         return (logits, attention) if return_attention else logits
 
 
-class StftPannsMobileNetFusionHead(nn.Module):
-    """Cross-Attention Fusion Head: MobileNetV2 Video Query attends to PANNS CNN6 Audio Tokens + STFT-dB Spectrogram Features."""
-
-    def __init__(self, audio_dim: int = 512, video_dim: int = 1280, d_model: int = 256, num_heads: int = 4, dropout: float = 0.1) -> None:
-        super().__init__()
-        self.audio_proj = nn.Linear(audio_dim, d_model)
-        self.video_proj = nn.Linear(video_dim, d_model)
-        self.stft_conv = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten(),
-            nn.Linear(64, d_model),
-        )
-        self.audio_pos = nn.Parameter(Tensor(1, 6, d_model).normal_(mean=0.0, std=0.02))
-
-        self.cross_attn = nn.MultiheadAttention(d_model, num_heads, dropout=dropout, batch_first=True)
-        self.cross_norm = nn.LayerNorm(d_model)
-        self.ffn = nn.Sequential(
-            nn.Linear(d_model, d_model * 4),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(d_model * 4, d_model),
-        )
-        self.ffn_norm = nn.LayerNorm(d_model)
-        self.classifier = nn.Sequential(
-            nn.Linear(d_model * 2, d_model),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(d_model, 4),
-        )
-
-    def forward(self, audio_tokens: Tensor, video_feature: Tensor, stft_db_img: Tensor) -> tuple[Tensor, Tensor]:
-        # PANNS Audio Tokens: [B, 6, 512] -> [B, 6, d_model]
-        panns_embed = self.audio_proj(audio_tokens) + self.audio_pos
-
-        # STFT dB Image Feature: [B, 3, 224, 224] -> [B, 1, d_model]
-        stft_embed = self.stft_conv(stft_db_img).unsqueeze(1)
-
-        # Combined Audio Representation (6 PANNS tokens + 1 STFT token = 7 tokens)
-        combined_audio = torch.cat([panns_embed, stft_embed], dim=1)
-
-        # Video Query: MobileNetV2 [B, 1280] -> [B, 1, d_model]
-        video_embed = self.video_proj(video_feature).unsqueeze(1)
-
-        # Cross Attention: Video Query attends to 7 Audio/STFT Tokens
-        attended, attention = self.cross_attn(video_embed, combined_audio, combined_audio, need_weights=True)
-        fused_video = self.cross_norm(video_embed + attended).squeeze(1)
-
-        # Pool Audio Tokens
-        audio_pooled = combined_audio.mean(dim=1)
-
-        # Concatenate Video + Audio representation
-        combined = torch.cat([fused_video, audio_pooled], dim=1)
-        logits = self.classifier(combined)
-        return logits, attention
-
-
-class StftPannsMobileNetMultimodalModel(nn.Module):
-    """Audio (PANNS CNN6 + STFT dB Image) + Video (MobileNetV2) Multimodal Model."""
-
-    def __init__(self, audio_panns_encoder: nn.Module, video_mobilenet_encoder: nn.Module, d_model: int = 256, num_heads: int = 4, encoder_mode: str = "frozen", dropout: float = 0.1) -> None:
-        super().__init__()
-        self.stft_transform = STFTTodBImageTransform(n_fft=4096, hop_length=2048, win_length=2048, image_size=224)
-        self.audio_panns_encoder = audio_panns_encoder
-        self.video_mobilenet_encoder = video_mobilenet_encoder
-        self.encoder_mode = encoder_mode
-        self.fusion = StftPannsMobileNetFusionHead(
-            audio_dim=audio_panns_encoder.feature_dim,
-            video_dim=video_mobilenet_encoder.feature_dim,
-            d_model=d_model,
-            num_heads=num_heads,
-            dropout=dropout,
-        )
-        self.configure_encoder_mode()
-
-    def configure_encoder_mode(self) -> None:
-        # Unfreeze ALL parameters of Audio Encoder (PANNS CNN6) for continuous fine-tuning
-        for parameter in self.audio_panns_encoder.parameters():
-            parameter.requires_grad = True
-
-        # Freeze ALL parameters of Video Encoder (MobileNetV2) completely
-        for parameter in self.video_mobilenet_encoder.parameters():
-            parameter.requires_grad = False
-
-    def train(self, mode: bool = True) -> StftPannsMobileNetMultimodalModel:
-        super().train(mode)
-        if mode:
-            # Audio encoder in train mode for fine-tuning
-            self.audio_panns_encoder.train()
-            # Video encoder strictly in eval mode
-            self.video_mobilenet_encoder.eval()
-        return self
-
-    def forward(self, waveforms: Tensor, images: Tensor, return_attention: bool = False) -> Tensor | tuple[Tensor, Tensor]:
-        # 1. PANNS CNN6 Audio Tokens [B, 6, 512]
-        audio_tokens = self.audio_panns_encoder(waveforms)
-
-        # 2. STFT dB Spectrogram Image [B, 3, 224, 224]
-        stft_db_img = self.stft_transform(waveforms)
-
-        # 3. MobileNetV2 Video Feature [B, 1280]
-        video_feature = self.video_mobilenet_encoder(images)
-
-        # 4. Multimodal Fusion
-        logits, attention = self.fusion(audio_tokens, video_feature, stft_db_img)
-        return (logits, attention) if return_attention else logits
-
-
-class AudioStftPannsOnlyModel(nn.Module):
-    """Single-Modality Audio Model: PANNS CNN6 (unfrozen) + STFT-dB Spectrogram Image features."""
+class AudioPannsOnlyModel(nn.Module):
+    """Pure Single-Modality Audio Model: PANNS CNN6 (unfrozen full fine-tuning)."""
 
     def __init__(self, audio_panns_encoder: nn.Module, d_model: int = 256, num_heads: int = 4, dropout: float = 0.1) -> None:
         super().__init__()
         self.audio_panns_encoder = audio_panns_encoder
-        self.stft_transform = STFTTodBImageTransform(n_fft=4096, hop_length=2048, win_length=2048, image_size=224)
-
         self.audio_proj = nn.Linear(audio_panns_encoder.feature_dim, d_model)
-        self.stft_conv = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten(),
-            nn.Linear(64, d_model),
-        )
         self.audio_pos = nn.Parameter(Tensor(1, 6, d_model).normal_(mean=0.0, std=0.02))
         self.self_attn = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(d_model=d_model, nhead=num_heads, dim_feedforward=d_model * 4, dropout=dropout, batch_first=True),
@@ -416,11 +290,11 @@ class AudioStftPannsOnlyModel(nn.Module):
         self.configure_encoder_mode()
 
     def configure_encoder_mode(self) -> None:
-        # Unfreeze ALL parameters of Audio Encoder (PANNS CNN6) for continuous fine-tuning
+        # Unfreeze ALL parameters of Audio Encoder (PANNS CNN6) for full fine-tuning
         for parameter in self.audio_panns_encoder.parameters():
             parameter.requires_grad = True
 
-    def train(self, mode: bool = True) -> AudioStftPannsOnlyModel:
+    def train(self, mode: bool = True) -> AudioPannsOnlyModel:
         super().train(mode)
         if mode:
             self.audio_panns_encoder.train()
@@ -431,15 +305,8 @@ class AudioStftPannsOnlyModel(nn.Module):
         audio_tokens = self.audio_panns_encoder(waveforms)
         panns_embed = self.audio_proj(audio_tokens) + self.audio_pos
 
-        # 2. STFT dB Spectrogram Image [B, 3, 224, 224] -> [B, 1, d_model]
-        stft_db_img = self.stft_transform(waveforms)
-        stft_embed = self.stft_conv(stft_db_img).unsqueeze(1)
-
-        # 3. Combined Audio Tokens [B, 7, d_model]
-        combined_audio = torch.cat([panns_embed, stft_embed], dim=1)
-
-        # 4. Self Attention & Pooling
-        attended = self.self_attn(combined_audio)
+        # 2. Self Attention & Pooling
+        attended = self.self_attn(panns_embed)
         pooled = attended.mean(dim=1)
         logits = self.classifier(pooled)
         return logits
