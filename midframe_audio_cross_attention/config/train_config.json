@@ -37,7 +37,7 @@
     "output_dir": "checkpoint"
   },
   "ibot_pretraining": {
-    "enabled": true,
+    "enabled": false,
     "epochs": 50,
     "batch_size": 32,
     "learning_rate": 0.00005,
