@@ -1,4 +1,4 @@
-"""High-Resolution STFT dB Spectrogram to RGB Image Transformation Module."""
+"""High-Resolution 256k STFT dB Spectrogram to RGB Image Transformation Module."""
 
 from __future__ import annotations
 
@@ -8,19 +8,20 @@ import torch.nn.functional as F
 
 
 class STFTTodBImageTransform(nn.Module):
-    """Converts 2s audio waveform [B, 128000] into a 3-channel 224x224 STFT dB Spectrogram Image [B, 3, 224, 224]."""
+    """Converts 2s audio waveform into a 3-channel 224x224 STFT dB Spectrogram Image [B, 3, 224, 224] with High-Res 256k parameters."""
 
-    def __init__(self, n_fft: int = 2048, hop_length: int = 512, image_size: int = 224) -> None:
+    def __init__(self, n_fft: int = 4096, hop_length: int = 2048, win_length: int = 2048, image_size: int = 224) -> None:
         super().__init__()
         self.n_fft = n_fft
         self.hop_length = hop_length
+        self.win_length = win_length
         self.image_size = image_size
-        self.register_buffer("window", torch.hann_window(n_fft))
+        self.register_buffer("window", torch.hann_window(win_length))
 
     def forward(self, waveform: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            waveform: Tensor of shape [batch, 128000] (64 kHz x 2s audio).
+            waveform: Tensor of shape [batch, samples] (e.g. 64 kHz or 256 kHz audio).
         Returns:
             db_image: Normalized 3-channel image Tensor of shape [batch, 3, 224, 224].
         """
@@ -28,12 +29,12 @@ class STFTTodBImageTransform(nn.Module):
         if waveform.dim() == 1:
             waveform = waveform.unsqueeze(0)
 
-        # STFT computation
+        # STFT computation with 256k High-Res resolution parameters
         stft_complex = torch.stft(
             waveform,
             n_fft=self.n_fft,
             hop_length=self.hop_length,
-            win_length=self.n_fft,
+            win_length=self.win_length,
             window=self.window.to(waveform.device),
             return_complex=True,
         )  # Shape: [batch, n_fft // 2 + 1, time_steps]

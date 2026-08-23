@@ -336,7 +336,7 @@ class StftPannsMobileNetMultimodalModel(nn.Module):
 
     def __init__(self, audio_panns_encoder: nn.Module, video_mobilenet_encoder: nn.Module, d_model: int = 256, num_heads: int = 4, encoder_mode: str = "frozen", dropout: float = 0.1) -> None:
         super().__init__()
-        self.stft_transform = STFTTodBImageTransform(n_fft=2048, hop_length=512, image_size=224)
+        self.stft_transform = STFTTodBImageTransform(n_fft=4096, hop_length=2048, win_length=2048, image_size=224)
         self.audio_panns_encoder = audio_panns_encoder
         self.video_mobilenet_encoder = video_mobilenet_encoder
         self.encoder_mode = encoder_mode
@@ -388,7 +388,7 @@ class AudioStftPannsOnlyModel(nn.Module):
     def __init__(self, audio_panns_encoder: nn.Module, d_model: int = 256, num_heads: int = 4, dropout: float = 0.1) -> None:
         super().__init__()
         self.audio_panns_encoder = audio_panns_encoder
-        self.stft_transform = STFTTodBImageTransform(n_fft=2048, hop_length=512, image_size=224)
+        self.stft_transform = STFTTodBImageTransform(n_fft=4096, hop_length=2048, win_length=2048, image_size=224)
 
         self.audio_proj = nn.Linear(audio_panns_encoder.feature_dim, d_model)
         self.stft_conv = nn.Sequential(
