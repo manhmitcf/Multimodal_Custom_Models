@@ -1,12 +1,12 @@
 # Hướng dẫn Chi tiết Cấu hình File JSON (CONFIG_GUIDE)
 
-Tài liệu này giải thích chi tiết ý nghĩa từng thông số trong file cấu hình JSON [`config/train_config.json`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/midframe_audio_cross_attention/config/train_config.json) và [`config/artifact_upload_config.json`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/midframe_audio_cross_attention/config/artifact_upload_config.json), giúp bạn dễ dàng chỉnh sửa và tùy biến cho các kịch bản thử nghiệm khác nhau.
+Tài liệu này giải thích chi tiết ý nghĩa từng thông số trong file cấu hình JSON [`config/train_config.json`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/src/config/train_config.json) và [`config/artifact_upload_config.json`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/src/config/artifact_upload_config.json), giúp bạn dễ dàng chỉnh sửa và tùy biến cho các kịch bản thử nghiệm khác nhau.
 
 ---
 
 ## 📄 1. File Cấu hình Chính: `config/train_config.json`
 
-File cấu hình được chia thành 7 khối thông số chính:
+File cấu hình được chia thành 6 khối thông số chính:
 
 ```json
 {
@@ -15,7 +15,6 @@ File cấu hình được chia thành 7 khối thông số chính:
   "data": { ... },
   "model": { ... },
   "training": { ... },
-  "ibot_pretraining": { ... },
   "results_upload": { ... }
 }
 ```
@@ -64,18 +63,7 @@ File cấu hình được chia thành 7 khối thông số chính:
 * **`weight_decay`**: Hệ số suy giảm trọng số L2 regularization (Mặc định `0.0001`).
 * **`seed`**: Hạt giống ngẫu nhiên để đảm bảo tính tái lập kết quả (Mặc định `42`).
 * **`device`**: `"auto"` (Tự động dùng GPU nếu có, nếu không chuyển CPU), `"cuda"`, hoặc `"cpu"`.
-* **`output_dir`**: Đường dẫn thư mục xuất kết quả checkpoints và logs (Mặc định `"checkpoint"` hoặc `"../runs/..."`).
-
----
-
-### 🔹 Khối `ibot_pretraining` (Tiền huấn luyện Tự giám sát SSL trên tập Train)
-* **`enabled`**: `true` để bật bước iBOT SSL pretraining không nhãn trên khung hình giữa của tập train; `false` để bỏ qua.
-* **`epochs`**: Số epoch tiền huấn luyện iBOT (Mặc định `50`).
-* **`batch_size`**: Kích thước batch iBOT (Mặc định `32`).
-* **`learning_rate`**: Tốc độ học iBOT (Mặc định `0.00005`).
-* **`mask_ratio`**: Tỉ lệ che các ô không gian (Mặc định `0.4` tức che 40% ô vuông).
-* **`num_prototypes`**: Số lượng cluster prototypes ở đầu classifier iBOT (Mặc định `2048`).
-* **`output_dir`**: Thư mục lưu checkpoint iBOT.
+* **`output_dir`**: Đường dẫn thư mục xuất kết quả checkpoints và logs (Mặc định `"checkpoint"`).
 
 ---
 
@@ -95,17 +83,13 @@ File này quản lý việc nén **toàn bộ thư mục kết quả** (`checkpo
 {
   "enabled": true,
   "source_dir": "checkpoint",
-  "zip_path": "checkpoint/gw_avf_multimodal_results.zip",
+  "zip_path": "checkpoint/R_BPMD_Multimodal_Artifacts.zip",
   "repo_id": "manhmitcf/fish_result",
   "repo_type": "dataset",
-  "path_in_repo": "gw_avf_multimodal_results.zip",
+  "path_in_repo": "R_BPMD_Multimodal_Artifacts.zip",
   "create_repo": true
 }
 ```
-
-* **`enabled`**: Set `true` để bật nạp tự động artifact zip sau khi train xong.
-* **`source_dir`**: Thư mục chứa toàn bộ file đầu ra cần đóng gói.
-* **`repo_id`**: Địa chỉ Hugging Face Dataset repo: `"manhmitcf/fish_result"`.
 
 ---
 
@@ -116,9 +100,6 @@ Hãy chỉnh giảm `batch_size` trong `train_config.json`:
 ```json
 "training": {
   "batch_size": 8
-},
-"ibot_pretraining": {
-  "batch_size": 16
 }
 ```
 
@@ -130,8 +111,8 @@ Chuyển `encoder_mode` từ `"frozen"` sang `"tune"`:
 }
 ```
 
-### 3. Nếu muốn đổi sang file config khác khi chạy
-Bạn có thể truyền cờ `--config` khi gọi lệnh `main.py`:
+### 3. Khởi chạy Pipeline
 ```bash
-python main.py --config config/train_config_03_tune_gentle.json
+cd src
+python main.py
 ```

@@ -8,10 +8,9 @@ Hệ thống nghiên cứu & xây dựng các mô hình AI Đa thức (**Multimo
 
 | Thư mục | Chức năng & Mô tả |
 | :--- | :--- |
+| 📁 [**`src/`**](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/src) | **Mã nguồn Chính của Phương pháp**: Chứa Dataloader, Models, Features, Tasks và Scripts khởi chạy. |
 | 📁 [**`U_FFIA27K_audio/`**](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/U_FFIA27K_audio) | Huấn luyện & đánh giá Baseline Audio độc lập (PANNs CNN6/10/14, ResNet22, MobileNetV1/V2, EfficientNetB0). |
 | 📁 [**`U_FFIA27K_video/`**](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/U_FFIA27K_video) | Huấn luyện & đánh giá Baseline Video độc lập (SwinTiny, DINOv2, ResNet18/50, DenseNet121, ConvNeXtTiny). |
-| 📁 [**`midframe_audio_cross_attention/`**](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/midframe_audio_cross_attention) | **Module Dung hợp Multimodal Cross-Attention**: Kết hợp Middle Video Frame và Full Audio 2s. |
-| 📁 [**`method/`**](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/method) | **Tổng hợp Tri thức Paper & Đề xuất Phương pháp**: Chứa 4 file đề xuất kiến trúc (ST-AVCA, M2-SSL, GW-AVF, R-BPMD). |
 | 📁 `papers/` | Chứa 50+ bài báo nghiên cứu khoa học phân loại theo 5 chủ đề chuyên sâu. |
 
 ---
@@ -31,12 +30,12 @@ Hệ thống nghiên cứu & xây dựng các mô hình AI Đa thức (**Multimo
 ## 🚀 Hướng dẫn Nhanh Khởi chạy Thử nghiệm
 
 Xem hướng dẫn chi tiết từng bước cho môi trường Marimo Cloud tại:  
-👉 [`midframe_audio_cross_attention/README_MARIMO.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/midframe_audio_cross_attention/README_MARIMO.md)  
-👉 [`midframe_audio_cross_attention/CONFIG_GUIDE.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/midframe_audio_cross_attention/CONFIG_GUIDE.md)
+👉 [`src/README_MARIMO.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/src/README_MARIMO.md)  
+👉 [`src/CONFIG_GUIDE.md`](file:///C:/Users/manhm/Desktop/Multimodal_Custom_Models/src/CONFIG_GUIDE.md)
 
 Lệnh chạy chính:
 ```bash
-cd midframe_audio_cross_attention
+cd src
 python -m pip install -r requirements.txt
 python main.py
 ```
