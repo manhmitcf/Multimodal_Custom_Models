@@ -36,17 +36,21 @@ THỰC TẾ  Unfed       688        12          0          0          700
 
 ---
 
-## 🖼️ 3. SƠ ĐỒ NHIỆT MA TRẬN NHẦM LẪN (HEATMAP VISUALIZATION)
+## 🖼️ 3. SƠ ĐỒ PHÂN BỔ KẾT QUẢ VÀ ĐỘ CHÍNH XÁC (VISUAL SUMMARY)
 
 ```mermaid
-quadrantChart
-    title Ma trận nhầm lẫn Holdout Test
-    x-axis Dự đoán sai --> Dự đoán đúng
-    y-axis Mức độ cá ăn thấp --> Mức độ cá ăn cao
-    quadrant-1 Lớp 3 (High): 677/700 đúng (96.71% Recall)
-    quadrant-2 Lớp 0 (Unfed): 688/700 đúng (98.29% Recall)
-    quadrant-3 Lớp 1 (Low): 659/700 đúng (94.14% Recall)
-    quadrant-4 Lớp 2 (Medium): 644/700 đúng (92.00% Recall)
+graph TD
+    subgraph Test_Set ["Tập Kiểm thử Holdout Test (2800 mẫu)"]
+        C0["Lớp 0: Unfed - 688/700 đúng (F1: 98.29%)"]
+        C1["Lớp 1: Low - 659/700 đúng (F1: 94.82%)"]
+        C2["Lớp 2: Medium - 644/700 đúng (F1: 92.26%)"]
+        C3["Lớp 3: High - 677/700 đúng (F1: 95.76%)"]
+    end
+    
+    C0 --> RES["Tổng kết: Accuracy 95.29% | Macro F1 95.28%"]
+    C1 --> RES
+    C2 --> RES
+    C3 --> RES
 ```
 
 ---
