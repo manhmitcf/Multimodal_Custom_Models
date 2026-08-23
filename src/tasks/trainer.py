@@ -67,13 +67,16 @@ class MultimodalTrainer:
             if src_file.exists():
                 shutil.copy(src_file, self.splits_dir / f"{split}.csv")
 
-    def _build_dataloader(self, dataset: SourcePairedDataset, shuffle: bool) -> DataLoader:
-        is_ram_cached = getattr(dataset, "cache_audio_enabled", False) and getattr(dataset, "cache_video_enabled", False)
-        num_workers = resolve_num_workers(self.config.data.num_workers, is_ram_cached=is_ram_cached)
+    def _build_dataloader(self, dataset: SourcePairedDataset, shuffle: bool, split: str = "train") -> DataLoader:
+        if split in ("val", "test"):
+            num_workers = 4
+        else:
+            num_workers = resolve_num_workers(self.config.data.num_workers)
+
         use_persistent = num_workers > 0
         use_pin = torch.cuda.is_available()
 
-        logger.info(f"Building DataLoader (shuffle={shuffle}): num_workers={num_workers}, pin_memory={use_pin}, persistent_workers={use_persistent}")
+        logger.info(f"Building DataLoader for '{split}' (shuffle={shuffle}): num_workers={num_workers}, pin_memory={use_pin}, persistent_workers={use_persistent}")
         return DataLoader(
             dataset,
             batch_size=self.config.training.batch_size,
@@ -89,9 +92,9 @@ class MultimodalTrainer:
         val_ds = SourcePairedDataset(self.config, "val")
         test_ds = SourcePairedDataset(self.config, "test")
 
-        train_loader = self._build_dataloader(train_ds, shuffle=True)
-        val_loader = self._build_dataloader(val_ds, shuffle=False)
-        test_loader = self._build_dataloader(test_ds, shuffle=False)
+        train_loader = self._build_dataloader(train_ds, shuffle=True, split="train")
+        val_loader = self._build_dataloader(val_ds, shuffle=False, split="val")
+        test_loader = self._build_dataloader(test_ds, shuffle=False, split="test")
 
         history_path = self.output_dir / "history.csv"
         history_fields = [
